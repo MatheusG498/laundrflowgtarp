@@ -12,7 +12,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: MONGODB_URI
-        sync: false          # cole a connection string do Atlas no painel
+        sync: false          # cole a connection string do Atlas no painel do Render (não aqui)
       - key: DB_NAME
         value: laundrflow
       - key: JWT_SECRET
