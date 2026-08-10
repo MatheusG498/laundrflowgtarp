@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where cargo *)",
+      "Bash(cargo --version)",
+      "Bash(cargo check *)",
+      "Bash(node --check db_sync.js)",
+      "Bash(node --check app_v1.js)",
+      "PowerShell($paths = @\\(\"$env:ProgramFiles\\\\nodejs\\\\node.exe\",\"$env:ProgramFiles\\(x86\\)\\\\nodejs\\\\node.exe\",\"$env:APPDATA\\\\npm\\\\node.exe\",\"$env:LOCALAPPDATA\\\\Programs\\\\nodejs\\\\node.exe\"\\); foreach \\($p in $paths\\){ if\\(Test-Path $p\\){ \"ACHOU: $p\" } }; try { $v = & node --version 2>$null; if\\($v\\){ \"node no PATH: $v\" } } catch {}; Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source)",
+      "Bash(git --version)",
+      "Bash(git config *)",
+      "Bash(git rm *)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m 'LaundrFlow: app Tauri + servidor API multiusuário \\(login, cargos, sync\\) *)"
+    ]
+  }
+}

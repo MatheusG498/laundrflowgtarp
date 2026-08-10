@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LaundrFlow - Gestão & Auditoria de Capitais</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome para ícones -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js para gráficos dinâmicos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Estilo Principal -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Barra Lateral de Navegação -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-building-columns brand-icon"></i>
+                <div class="brand-text">
+                    <h1>LaundrFlow</h1>
+                    <span>SISTEMA DE AUDITORIA</span>
+                </div>
+            </div>
+            
+            <nav class="sidebar-menu">
+                <a href="#dashboard" class="menu-item active" data-target="dashboard">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#schemes" class="menu-item" data-target="schemes">
+                    <i class="fa-solid fa-user-secret"></i>
+                    <span>Clientes Ilegais</span>
+                </a>
+                <a href="#legal-schemes" class="menu-item" data-target="legal-schemes">
+                    <i class="fa-solid fa-user-check"></i>
+                    <span>Clientes Legítimos</span>
+                </a>
+                <a href="#transactions" class="menu-item" data-target="transactions">
+                    <i class="fa-solid fa-dollar-sign"></i>
+                    <span>Lançamentos</span>
+                </a>
+                <a href="#monitor" class="menu-item" data-target="monitor">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>Monitoramento</span>
+                </a>
+                <a href="#ledger" class="menu-item" data-target="ledger">
+                    <i class="fa-solid fa-receipt"></i>
+                    <span>Livro-Razão</span>
+                </a>
+                <a href="#settings" class="menu-item" data-target="settings">
+                    <i class="fa-solid fa-server"></i>
+                    <span>Servidor</span>
+                </a>
+                <a href="#admin" class="menu-item menu-item-admin" data-target="admin" style="display: none;">
+                    <i class="fa-solid fa-users-gear"></i>
+                    <span>Usuários &amp; Cargos</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-status-card" id="network-status-card">
+                <div class="status-indicator-wrapper">
+                    <span class="pulse-indicator" id="pulse-indicator"></span>
+                    <span class="status-text" id="network-status-text">Verificando rede...</span>
+                </div>
+                <div class="system-time" id="clock">00:00:00</div>
+            </div>
+        </aside>
+
+        <!-- Conteúdo Principal -->
+        <main class="main-content">
+            <!-- Barra Superior -->
+            <header class="top-bar">
+                <div class="page-title-area">
+                    <h2 id="page-title">Painel de Controle</h2>
+                    <p id="page-subtitle">Consolidado em tempo real de fluxos e taxas de conversão</p>
+                </div>
+                <div class="user-profile">
+                    <div class="profile-info">
+                        <span class="profile-name" id="profile-name">—</span>
+                        <span class="profile-role" id="profile-role">—</span>
+                    </div>
+                    <div class="profile-avatar">
+                        <i class="fa-solid fa-user-shield"></i>
+                    </div>
+                    <button class="btn-logout-top" id="btn-logout-top" title="Sair">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Telas do App (Alternadas por JS) -->
+            <div class="content-body">
+                
+                <!-- 1. DASHBOARD -->
+                <section id="section-dashboard" class="app-section active">
+                    <!-- Cards de Métricas -->
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Fluxo Total Movimentado</span>
+                                <i class="fa-solid fa-coins text-primary"></i>
+                            </div>
+                            <div class="metric-value" id="metric-total">R$ 0,00</div>
+                            <div class="metric-trend text-primary">
+                                <i class="fa-solid fa-arrow-trend-up"></i>
+                                <span>Capital em Trânsito</span>
+                            </div>
+                        </div>
+
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Fundos Integrados</span>
+                                <i class="fa-solid fa-circle-check text-success"></i>
+                            </div>
+                            <div class="metric-value" id="metric-integrated">R$ 0,00</div>
+                            <div class="metric-trend text-success">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <span id="metric-integrated-pct">0% do total</span>
+                            </div>
+                        </div>
+
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Custos Operacionais (Perdas)</span>
+                                <i class="fa-solid fa-percent text-warning"></i>
+                            </div>
+                            <div class="metric-value" id="metric-losses">R$ 0,00</div>
+                            <div class="metric-trend text-warning">
+                                <i class="fa-solid fa-receipt"></i>
+                                <span id="metric-losses-pct">Taxa média: 0%</span>
+                            </div>
+                        </div>
+
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Faturamento Legal Consolidado</span>
+                                <i class="fa-solid fa-shield-halved text-success"></i>
+                            </div>
+                            <div class="metric-value" id="metric-legal-total">R$ 0,00</div>
+                            <div class="metric-trend text-success">
+                                <i class="fa-solid fa-building-columns"></i>
+                                <span id="metric-legal-tax">Tributação paga: R$ 0,00</span>
+                            </div>
+                        </div>
+
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Índice de Legitimidade</span>
+                                <i class="fa-solid fa-scale-balanced text-primary"></i>
+                            </div>
+                            <div class="metric-value" id="metric-legitimacy-index">0.0%</div>
+                            <div class="metric-trend text-primary">
+                                <i class="fa-solid fa-arrow-trend-up"></i>
+                                <span>Proporção de Capital Legal</span>
+                            </div>
+                        </div>
+
+                        <div class="metric-card">
+                            <div class="metric-header">
+                                <span>Esquemas Ativos</span>
+                                <i class="fa-solid fa-cubes text-info"></i>
+                            </div>
+                            <div class="metric-value" id="metric-schemes-count">0</div>
+                            <div class="metric-trend text-info">
+                                <i class="fa-solid fa-plus"></i>
+                                <span>Canais operando</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gráficos -->
+                    <div class="charts-grid">
+                        <div class="chart-card glass-panel">
+                            <h3>Distribuição de Fundos por Canal</h3>
+                            <div class="chart-container">
+                                <canvas id="chart-distribution"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card glass-panel">
+                            <h3>Evolução de Fluxo de Caixa</h3>
+                            <div class="chart-container">
+                                <canvas id="chart-timeline"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. GESTÃO DE CLIENTES ILEGAIS -->
+                <section id="section-schemes" class="app-section">
+                    <div class="section-split">
+                        <!-- Formulário -->
+                        <div class="glass-panel form-container">
+                            <h3><i class="fa-solid fa-user-secret text-primary"></i> Novo Cliente Ilegal (Fachada)</h3>
+                            <form id="form-scheme">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="scheme-org">Organização / Grupo</label>
+                                        <input type="text" id="scheme-org" placeholder="Ex: Cartel, Benny's Works" value="Geral" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="scheme-name">Nome do Esquema / Canal</label>
+                                        <input type="text" id="scheme-name" placeholder="Ex: Oficina, Lavanderia" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="scheme-tax" id="scheme-tax-label">Custo Operacional / Taxa (%)</label>
+                                        <input type="number" id="scheme-tax" min="0" max="100" step="0.1" placeholder="Ex: 15" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="scheme-limit">Capacidade Mensal (R$)</label>
+                                        <input type="text" id="scheme-limit" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                     <label>Método/Categoria de Estratificação</label>
+                                     <div id="scheme-category-container" class="searchable-select-container"></div>
+                                 </div>
+                                <div class="form-group checkbox-group">
+                                    <label class="checkbox-label" for="scheme-has-stock">
+                                        <input type="checkbox" id="scheme-has-stock">
+                                        <span>Ativar Controle de Estoque</span>
+                                    </label>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fa-solid fa-plus-circle"></i> Cadastrar Cliente Ilegal
+                                </button>
+                                </form>
+                        </div>
+
+                        <!-- Lista de Esquemas -->
+                        <div class="schemes-list-container">
+                            <h3>Clientes Ilegais Ativos</h3>
+                            <div class="org-list-vertical" id="schemes-list">
+                                <!-- Preenchido dinamicamente via JS -->
+                            </div>
+                        </div>
+                </section>
+
+                <!-- 2.5 GESTÃO DE CLIENTES LEGÍTIMOS -->
+                <section id="section-legal-schemes" class="app-section">
+                    <div class="section-split">
+                        <!-- Formulário -->
+                        <div class="glass-panel form-container">
+                            <h3><i class="fa-solid fa-user-check text-primary"></i> Novo Cliente Legítimo (Legal)</h3>
+                            <form id="form-legal-scheme">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="legal-scheme-org">Organização / Grupo</label>
+                                        <input type="text" id="legal-scheme-org" placeholder="Ex: holding, holding de imoveis" value="Geral" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="legal-scheme-name">Nome da Empresa / Canal</label>
+                                        <input type="text" id="legal-scheme-name" placeholder="Ex: Imobiliária, Restaurante Real" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="legal-scheme-tax">Alíquota de Imposto / Tributação (%)</label>
+                                        <input type="number" id="legal-scheme-tax" min="0" max="100" step="0.1" placeholder="Ex: 15" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="legal-scheme-limit">Faturamento Limite Mensal (R$)</label>
+                                        <input type="text" id="legal-scheme-limit" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                     <label>Ramo / Categoria Comercial</label>
+                                     <div id="legal-scheme-category-container" class="searchable-select-container"></div>
+                                 </div>
+                                <div class="form-group checkbox-group">
+                                    <label class="checkbox-label" for="legal-scheme-has-stock">
+                                        <input type="checkbox" id="legal-scheme-has-stock">
+                                        <span>Ativar Controle de Estoque</span>
+                                    </label>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fa-solid fa-plus-circle"></i> Cadastrar Cliente Legítimo
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Lista de Esquemas Legais -->
+                        <div class="schemes-list-container">
+                            <h3>Clientes Legítimos Ativos</h3>
+                            <div class="org-list-vertical" id="legal-schemes-list">
+                                <!-- Preenchido dinamicamente via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. LANÇAMENTO DE VALORES -->
+                <section id="section-transactions" class="app-section">
+                    <div class="glass-panel form-container max-w-md mx-auto" style="max-width: 550px !important;">
+                        <!-- Seletor de Formulários (Tabs) -->
+                        <div class="transaction-tabs" style="display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+                            <button type="button" class="tx-tab-btn active" onclick="switchTxTab('avulso')" id="tab-btn-avulso" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-muted); cursor: pointer; font-weight: 600; font-family: inherit; transition: var(--transition-fast);">
+                                <i class="fa-solid fa-file-invoice-dollar"></i> Lançamento Direto
+                            </button>
+                            <button type="button" class="tx-tab-btn" onclick="switchTxTab('conversao')" id="tab-btn-conversao" style="flex: 1; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-muted); cursor: pointer; font-weight: 600; font-family: inherit; transition: var(--transition-fast);">
+                                <i class="fa-solid fa-shuffle"></i> Conversão Segura
+                            </button>
+                        </div>
+
+                        <!-- FORMULÁRIO 1: LANÇAMENTO DIRETO (AVULSO) -->
+                        <div id="tx-form-avulso-container">
+                            <h3><i class="fa-solid fa-money-bill-transfer text-primary"></i> Registrar Movimentação</h3>
+                            <form id="form-transaction">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Cliente (Organização)</label>
+                                        <div id="tx-org-container" class="searchable-select-container"></div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Negócio (Canal)</label>
+                                        <div id="tx-scheme-container" class="searchable-select-container"></div>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label for="tx-amount">Valor (R$)</label>
+                                        <input type="text" id="tx-amount" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="tx-tax">Taxa (%)</label>
+                                        <input type="number" id="tx-tax" min="0" max="100" step="0.1" placeholder="Ex: 10" required>
+                                    </div>
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label for="tx-date">Data do Registro</label>
+                                        <input type="date" id="tx-date" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="tx-type">Etapa do Fluxo</label>
+                                        <select id="tx-type" required>
+                                            <option value="Depósito">1. Depósito (Inserção do capital)</option>
+                                            <option value="Estratificação">2. Estratificação (Mescla/Transferências)</option>
+                                            <option value="Integração">3. Integração (Saída como capital limpo)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="tx-status">Status da Transação</label>
+                                        <select id="tx-status" required>
+                                            <option value="Processando">Em Processamento</option>
+                                            <option value="Pendente">Aguardando Envio</option>
+                                            <option value="Limpo">Consolidado / Limpo</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="tx-desc">Descrição / Justificativa Comercial</label>
+                                    <input type="text" id="tx-desc" placeholder="Ex: Prestação de serviços de marketing, venda de mercadorias" required>
+                                </div>
+                                <div class="form-group dynamic-stock-field hidden" id="tx-stock-movements-section" style="margin-top: 15px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 15px;">
+                                    <label style="display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Itens da Movimentação de Estoque</span>
+                                        <span style="font-size: 11px; color: var(--text-muted);">Adicione múltiplos itens e quantidades</span>
+                                    </label>
+                                    <div id="tx-stock-movements-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+                                        <!-- Injetado dinamicamente via JS -->
+                                    </div>
+                                    <button type="button" class="btn btn-dashed btn-block" id="btn-add-stock-movement" style="margin-top: 12px; border: 1px dashed rgba(0, 242, 254, 0.4); color: var(--primary); background: transparent; font-size: 12px; height: 38px;">
+                                        <i class="fa-solid fa-plus"></i> Adicionar Item à Movimentação
+                                    </button>
+                                </div>
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fa-solid fa-floppy-disk"></i> Confirmar Lançamento
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- FORMULÁRIO 2: CONVERSÃO SEGURA (TRANSFERÊNCIA) -->
+                        <div id="tx-form-conversao-container" class="hidden">
+                            <h3><i class="fa-solid fa-shuffle text-primary"></i> Conversão Segura de Capitais</h3>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px; line-height: 1.4;">
+                                Transfira fundos de canais de fachada para canais legítimos em lote de forma simplificada e automatizada.
+                            </p>
+                            <form id="form-conversion">
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label>Cliente de Origem (Fachada)</label>
+                                        <div id="conv-source-org-container" class="searchable-select-container"></div>
+                                    </div>
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label>Negócio de Origem (Fachada)</label>
+                                        <div id="conv-source-container" class="searchable-select-container"></div>
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="conv-source-tax">Taxa Fachada (%)</label>
+                                        <input type="number" id="conv-source-tax" min="0" max="100" step="0.1" placeholder="Ex: 12" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label>Cliente de Destino (Legítimo)</label>
+                                        <div id="conv-dest-org-container" class="searchable-select-container"></div>
+                                    </div>
+                                    <div class="form-group" style="flex: 1.5;">
+                                        <label>Negócio de Destino (Legítimo)</label>
+                                        <div id="conv-dest-container" class="searchable-select-container"></div>
+                                    </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="conv-dest-tax">Imposto Legal (%)</label>
+                                        <input type="number" id="conv-dest-tax" min="0" max="100" step="0.1" placeholder="Ex: 10" required>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label for="conv-amount">Valor para Injetar (R$ sujo)</label>
+                                        <input type="text" id="conv-amount" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
+                                    </div>
+                                    <div class="form-group" style="display: flex; gap: 8px;">
+                                        <div style="flex: 1;">
+                                            <label for="conv-start-date">Início do Período</label>
+                                            <input type="date" id="conv-start-date" required>
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <label for="conv-end-date">Fim do Período</label>
+                                            <input type="date" id="conv-end-date" required>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="conv-desc">Justificativa Comercial / Descrição</label>
+                                    <input type="text" id="conv-desc" placeholder="Ex: Dividendos de holding, reembolso corporativo" required>
+                                </div>
+
+                                <!-- Painel Dinâmico de Simulação (Preview) -->
+                                <div class="conversion-preview-panel" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px;">
+                                    <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-primary); margin-bottom: 12px; letter-spacing: 0.5px;">
+                                        <i class="fa-solid fa-magnifying-glass-chart"></i> Simulação das Perdas e Faturamento
+                                    </h4>
+                                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: var(--text-muted);">Montante Inicial:</span>
+                                            <span id="preview-bruto" style="font-weight: 600;">R$ 0,00</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: var(--text-muted);">Período de Injeção:</span>
+                                            <span id="preview-duration" style="font-weight: 600; color: var(--color-primary);">1 dia</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
+                                            <span style="color: var(--text-muted);">Aporte Diário Projetado:</span>
+                                            <span id="preview-daily-amount" style="font-weight: 600; color: var(--color-primary);">R$ 0,00 / dia</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: var(--text-muted);">Taxa de Lavagem (Fachada):</span>
+                                            <span id="preview-taxa-lavagem" style="color: var(--color-warning); font-weight: 600;">- R$ 0,00 (0%)</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;">
+                                            <span style="color: var(--text-muted);">Capital Integrado:</span>
+                                            <span id="preview-lavado-liquido" style="color: var(--color-primary); font-weight: 700;">R$ 0,00</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: var(--text-muted);">Imposto Federal (Legal):</span>
+                                            <span id="preview-imposto-legal" style="color: var(--color-warning); font-weight: 600;">- R$ 0,00 (0%)</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; padding-top: 4px;">
+                                            <span style="color: var(--text-primary);">Capital Consolidado Final:</span>
+                                            <span id="preview-consolidado-final" style="color: var(--color-success);">R$ 0,00</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fa-solid fa-circle-check"></i> Processar Conversão Segura
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- NOVO: MONITORAMENTO DE OPERAÇÕES -->
+                <section id="section-monitor" class="app-section">
+                    <div class="dashboard-header glass-panel" style="margin-bottom: 20px;">
+                        <h2 style="font-size: 20px; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 10px;">
+                            <i class="fa-solid fa-clock-rotate-left text-primary"></i> Monitoramento de Operações
+                        </h2>
+                        <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                            Acompanhe o andamento dos processos de lavagem e diluição temporal ativos no livro-razão.
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 20px;">
+                        <!-- Seção 1: Operações em Andamento -->
+                        <div class="glass-panel" style="margin-bottom: 25px;">
+                            <h3 style="margin-bottom: 18px; font-size: 14px; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-spinner fa-spin text-primary"></i> Operações em Andamento
+                            </h3>
+                            <div id="active-conversions-list" class="conversions-grid">
+                                <!-- Injetado via JS -->
+                            </div>
+                        </div>
+
+                        <!-- Seção 2: Histórico de Operações -->
+                        <div class="glass-panel">
+                            <h3 style="margin-bottom: 18px; font-size: 14px; font-weight: 600; color: var(--text-muted); display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-circle-check"></i> Histórico de Operações
+                            </h3>
+                            <div id="completed-conversions-list" class="conversions-grid">
+                                <!-- Injetado via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. LIVRO-RAZÃO (LEDGER) -->
+                <section id="section-ledger" class="app-section">
+                    <div class="ledger-header glass-panel">
+                        <div class="search-filters">
+                            <div class="search-box">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" id="ledger-search" placeholder="Buscar por descrição, esquema ou hash...">
+                            </div>
+                            <div class="filter-box">
+                                <select id="ledger-filter-scheme">
+                                    <option value="all">Todos os Esquemas</option>
+                                    <!-- Preenchido via JS -->
+                                </select>
+                                <select id="ledger-filter-type">
+                                    <option value="all">Todas as Etapas</option>
+                                    <option value="Depósito">Depósito</option>
+                                    <option value="Estratificação">Estratificação</option>
+                                    <option value="Integração">Integração</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="ledger-actions">
+                            <button class="btn btn-secondary" id="btn-export-json">
+                                <i class="fa-solid fa-file-export"></i> Exportar Ledger
+                            </button>
+                            <button class="btn btn-danger" id="btn-clear-ledger">
+                                <i class="fa-solid fa-trash-can"></i> Limpar Dados
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tabela de Auditoria -->
+                    <div class="ledger-table-wrapper glass-panel">
+                        <table class="ledger-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Esquema</th>
+                                    <th>Etapa (Fluxo)</th>
+                                    <th>Descrição / Justificativa</th>
+                                    <th>Valor Operacional</th>
+                                    <th>Custo Oper. (Taxa)</th>
+                                    <th>Valor Líquido</th>
+                                    <th>Alt. Estoque</th>
+                                    <th>Status</th>
+                                    <th>Assinatura (Hash)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ledger-table-body">
+                                <!-- Inserido via JS -->
+                            </tbody>
+                        </table>
+                        <div class="no-records" id="no-records-msg" style="display: none;">
+                            <i class="fa-solid fa-database"></i>
+                            <p>Nenhum registro encontrado para os filtros aplicados.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. SERVIDOR (API CENTRAL) -->
+                <section id="section-settings" class="app-section">
+                    <div class="settings-grid">
+                        <!-- Card: Conexão com o Servidor -->
+                        <div class="glass-panel settings-card">
+                            <div class="settings-card-header">
+                                <i class="fa-solid fa-server text-primary"></i>
+                                <div>
+                                    <h3>Servidor (API)</h3>
+                                    <p>Endereço do servidor central que valida login e cargos. Todos os apps apontam para a mesma URL.</p>
+                                </div>
+                            </div>
+
+                            <div class="settings-field">
+                                <label for="api-url">URL da API</label>
+                                <input type="text" id="api-url" placeholder="https://seu-servidor.up.railway.app" autocomplete="off" spellcheck="false">
+                                <small>Ex.: a URL pública do PaaS, ou <code>http://localhost:8080</code> para testes locais.</small>
+                            </div>
+
+                            <div class="settings-actions">
+                                <button class="btn btn-secondary" id="btn-test-api">
+                                    <i class="fa-solid fa-plug-circle-check"></i> Testar
+                                </button>
+                                <button class="btn btn-primary" id="btn-save-api">
+                                    <i class="fa-solid fa-floppy-disk"></i> Salvar
+                                </button>
+                            </div>
+
+                            <div class="settings-status" id="api-status" style="display: none;"></div>
+                        </div>
+
+                        <!-- Card: Sincronização / Sessão -->
+                        <div class="glass-panel settings-card">
+                            <div class="settings-card-header">
+                                <i class="fa-solid fa-arrows-rotate text-primary"></i>
+                                <div>
+                                    <h3>Sincronização & Sessão</h3>
+                                    <p>Estado da conexão com o servidor e controle manual de sincronização dos dados.</p>
+                                </div>
+                            </div>
+
+                            <div class="sync-state-row">
+                                <span class="sync-state-label">Status</span>
+                                <span class="sync-badge" id="sync-badge">
+                                    <span class="sync-dot"></span>
+                                    <span id="sync-badge-text">Verificando...</span>
+                                </span>
+                            </div>
+                            <div class="sync-state-row">
+                                <span class="sync-state-label">Usuário</span>
+                                <span id="session-user">—</span>
+                            </div>
+                            <div class="sync-state-row">
+                                <span class="sync-state-label">Última sincronização</span>
+                                <span id="sync-last-time">—</span>
+                            </div>
+
+                            <div class="settings-actions">
+                                <button class="btn btn-secondary" id="btn-pull-db">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i> Puxar do Servidor
+                                </button>
+                                <button class="btn btn-primary" id="btn-push-db">
+                                    <i class="fa-solid fa-cloud-arrow-up"></i> Enviar ao Servidor
+                                </button>
+                            </div>
+
+                            <div class="settings-actions">
+                                <button class="btn btn-danger" id="btn-logout" style="flex: 1;">
+                                    <i class="fa-solid fa-right-from-bracket"></i> Sair (Logout)
+                                </button>
+                            </div>
+
+                            <div class="settings-note">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>Em uso normal, o app envia sozinho a cada alteração. Offline, as mudanças ficam na fila e sobem quando a conexão volta.</span>
+                            </div>
+
+                            <div class="settings-status" id="sync-status" style="display: none;"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 6. USUÁRIOS & CARGOS (SOMENTE ADMIN) -->
+                <section id="section-admin" class="app-section">
+                    <div class="settings-grid">
+                        <!-- Card: Usuários -->
+                        <div class="glass-panel settings-card">
+                            <div class="settings-card-header">
+                                <i class="fa-solid fa-users text-primary"></i>
+                                <div>
+                                    <h3>Usuários</h3>
+                                    <p>Crie contas e defina o cargo de cada usuário.</p>
+                                </div>
+                            </div>
+
+                            <div class="admin-form">
+                                <div class="settings-field">
+                                    <label for="new-user-name">Usuário</label>
+                                    <input type="text" id="new-user-name" placeholder="nome de usuário" autocomplete="off" spellcheck="false">
+                                </div>
+                                <div class="settings-field">
+                                    <label for="new-user-pass">Senha</label>
+                                    <input type="password" id="new-user-pass" placeholder="senha inicial" autocomplete="off">
+                                </div>
+                                <div class="settings-field">
+                                    <label for="new-user-role">Cargo</label>
+                                    <select id="new-user-role" class="settings-select"></select>
+                                </div>
+                                <button class="btn btn-primary" id="btn-add-user">
+                                    <i class="fa-solid fa-user-plus"></i> Criar Usuário
+                                </button>
+                            </div>
+
+                            <div class="settings-status" id="user-status" style="display: none;"></div>
+
+                            <div class="admin-list" id="users-list"></div>
+                        </div>
+
+                        <!-- Card: Cargos -->
+                        <div class="glass-panel settings-card">
+                            <div class="settings-card-header">
+                                <i class="fa-solid fa-id-badge text-primary"></i>
+                                <div>
+                                    <h3>Cargos & Categorias</h3>
+                                    <p>Defina quais telas cada cargo vê e o que pode fazer.</p>
+                                </div>
+                            </div>
+
+                            <div class="admin-form">
+                                <div class="settings-field">
+                                    <label for="new-role-name">Nome do cargo</label>
+                                    <input type="text" id="new-role-name" placeholder="ex.: Supervisor" autocomplete="off" spellcheck="false">
+                                </div>
+                                <div class="settings-field">
+                                    <label>Telas visíveis</label>
+                                    <div class="perm-checkboxes" id="new-role-perms"></div>
+                                </div>
+                                <label class="perm-toggle">
+                                    <input type="checkbox" id="new-role-edit"> Pode editar dados
+                                </label>
+                                <label class="perm-toggle">
+                                    <input type="checkbox" id="new-role-admin"> É administrador (gerencia usuários e cargos)
+                                </label>
+                                <button class="btn btn-primary" id="btn-add-role">
+                                    <i class="fa-solid fa-plus"></i> Criar Cargo
+                                </button>
+                            </div>
+
+                            <div class="settings-status" id="role-status" style="display: none;"></div>
+
+                            <div class="admin-list" id="roles-list"></div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal de Gerenciamento de Estoque -->
+    <div id="modal-manage-stock" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel">
+            <header class="modal-header">
+                <h3><i class="fa-solid fa-boxes-stacked text-primary"></i> Gerenciador de Estoque - <span id="modal-scheme-name">Esquema</span></h3>
+                <button class="btn-close-modal" id="btn-close-stock-modal"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+
+            <div class="modal-body-layout">
+                <!-- Seção Esquerda: Tabela de Itens e Produção -->
+                <div class="modal-inventory-section">
+                    <h4>Inventário de Itens</h4>
+                    <div class="table-scroll-wrapper">
+                        <table class="ledger-table font-sm" style="font-size: 13px; width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Tipo</th>
+                                    <th>Estoque</th>
+                                    <th>Fórmula (Receita) / Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-stock-table-body">
+                                <!-- Preenchido via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Seção Direita: Cadastro de Novo Item -->
+                <div class="modal-add-item-section">
+                    <h4>Adicionar Novo Item</h4>
+                    <form id="form-add-stock-item">
+                        <div class="form-group">
+                            <label for="stock-item-type">Tipo de Item</label>
+                            <select id="stock-item-type" required>
+                                <option value="insumo" selected>Insumo (Matéria-prima)</option>
+                                <option value="produto">Produto Composto (Criado)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="stock-item-name">Nome do Item</label>
+                            <input type="text" id="stock-item-name" placeholder="Ex: Sabão Industrial, Lote" required>
+                        </div>
+                        <div class="form-group" id="stock-item-qty-group">
+                            <label for="stock-item-qty">Quantidade Inicial</label>
+                            <input type="number" id="stock-item-qty" min="0" value="0" required>
+                        </div>
+                        <div class="form-group hidden" id="stock-item-value-group">
+                            <label for="stock-item-value">Preço de Venda (R$)</label>
+                            <input type="text" id="stock-item-value" placeholder="R$ 0,00" oninput="window.maskMoney(this)" value="0">
+                        </div>
+
+                        <!-- Seção de Receita (Oculta por padrão, aparece se tipo for produto) -->
+                        <div class="form-group hidden" id="stock-item-recipe-group">
+                            <label>Fórmula de Criação (Receita)</label>
+                            <p class="form-help-text" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px; text-transform: none;">
+                                Defina as quantidades necessárias de insumos para fabricar 1 unidade:
+                            </p>
+                            <div id="recipe-inputs-container" style="display: flex; flex-direction: column; gap: 8px; max-height: 150px; overflow-y: auto; padding-right: 4px;">
+                                <!-- Gerado dinamicamente via JS -->
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block">
+                            <i class="fa-solid fa-plus-circle"></i> Cadastrar Item
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Edição de Esquema -->
+    <div id="modal-edit-scheme" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel" style="width: 500px !important; max-width: 95% !important;">
+            <header class="modal-header">
+                <h3><i class="fa-solid fa-pen-to-square text-primary"></i> Editar Canal de Fluxo</h3>
+                <button class="btn-close-modal" id="btn-close-edit-modal" onclick="closeEditSchemeModal()"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div class="modal-body-layout" style="display: block; padding: 10px 0 0 0;">
+                <form id="form-edit-scheme">
+                    <input type="hidden" id="edit-scheme-id">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-scheme-org">Organização / Grupo</label>
+                            <input type="text" id="edit-scheme-org" placeholder="Ex: Cartel, Benny's Works" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-scheme-name">Nome do Esquema / Canal</label>
+                            <input type="text" id="edit-scheme-name" placeholder="Ex: Oficina, Lavanderia" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-scheme-tax" id="edit-scheme-tax-label">Custo Operacional / Taxa (%)</label>
+                            <input type="number" id="edit-scheme-tax" min="0" max="100" step="0.1" placeholder="Ex: 15" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-scheme-limit">Capacidade Mensal (R$)</label>
+                            <input type="text" id="edit-scheme-limit" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-scheme-type">Tipo de Canal</label>
+                        <select id="edit-scheme-type" onchange="window.toggleSchemeTypeFields(this.value, 'edit-scheme-tax-label')">
+                            <option value="fachada">Fachada (Lavagem de Dinheiro)</option>
+                            <option value="legal">Legítimo (Receita 100% Legal)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-scheme-category">Método/Categoria de Estratificação</label>
+                        <select id="edit-scheme-category">
+                            <option value="Serviços Fictícios">Serviços Fictícios (Consultoria/Palestras)</option>
+                            <option value="Comércio de Fachada">Comércio de Fachada (Restaurante/Lavanderia)</option>
+                            <option value="Fracionamento">Fracionamento (Smurfing/Depósitos)</option>
+                            <option value="Aquisição de Ativos">Aquisição de Ativos (Imóveis/Arte)</option>
+                            <option value="Outro">Outro Método Personalizado</option>
+                        </select>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label" for="edit-scheme-has-stock">
+                            <input type="checkbox" id="edit-scheme-has-stock">
+                            <span>Ativar Controle de Estoque</span>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 16px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Salvar Alterações
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Transferência Rápida (Mover Organização) -->
+    <div id="modal-move-org" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel" style="width: 420px !important; max-width: 95% !important;">
+            <header class="modal-header">
+                <h3><i class="fa-solid fa-arrows-to-dot text-primary"></i> Mover de Organização</h3>
+                <button class="btn-close-modal" id="btn-close-move-modal" onclick="closeMoveOrgModal()"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div class="modal-body-layout" style="display: block; padding: 10px 0 0 0;">
+                <p id="move-org-subtitle" style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.4;">
+                    Selecione um grupo destino ou cadastre um novo cliente para mover este negócio.
+                </p>
+                <form id="form-move-org">
+                    <input type="hidden" id="move-org-scheme-id">
+                    
+                    <div class="form-group">
+                        <label>Selecionar Organização Existente</label>
+                        <div id="move-org-select-container" class="searchable-select-container"></div>
+                    </div>
+                    
+                    <div class="form-group" style="position: relative; margin-top: 16px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 16px;">
+                        <label for="move-org-new">Ou Mover para Nova Organização</label>
+                        <input type="text" id="move-org-new" placeholder="Ex: Máfia Italiana, LaundrFlow Corp">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block" style="margin-top: 20px;">
+                        <i class="fa-solid fa-right-from-bracket"></i> Confirmar Mudança
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <!-- Modal de Detalhes e Controle da Conversão/Lavagem -->
+    <div id="modal-monitor-details" class="modal-overlay" style="display: none;">
+        <div class="modal-content glass-panel" style="width: 580px !important; max-width: 95% !important;">
+            <header class="modal-header">
+                <h3><i class="fa-solid fa-clock-rotate-left text-primary"></i> Detalhes da Operação</h3>
+                <button class="btn-close-modal" id="btn-close-monitor-modal" onclick="closeMonitorDetails()"><i class="fa-solid fa-xmark"></i></button>
+            </header>
+            <div class="modal-body-layout" style="display: block; padding: 10px 0 0 0;">
+                <div style="background: rgba(255, 255, 255, 0.01); border: 1px solid rgba(255, 255, 255, 0.04); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span id="monitor-details-desc" style="font-size: 14px; font-weight: 600; color: var(--text-primary);">Carregando descrição...</span>
+                        <span id="monitor-details-badge" class="conversion-badge">Pendente</span>
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px;">
+                        <div><strong>Origem (Fachada):</strong> <span id="monitor-details-source" style="color: var(--text-primary);">...</span></div>
+                        <div><strong>Destino (Legítimo):</strong> <span id="monitor-details-dest" style="color: var(--text-primary);">...</span></div>
+                    </div>
+                </div>
+
+                <div class="conversion-details-grid" style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
+                    <div class="conversion-detail-item">
+                        <span class="conversion-detail-label">Valor Total Planejado</span>
+                        <span id="monitor-details-amount" class="conversion-detail-value">R$ 0,00</span>
+                    </div>
+                    <div class="conversion-detail-item" style="text-align: right;">
+                        <span class="conversion-detail-label">Total Consolidado Limpo</span>
+                        <span id="monitor-details-net" class="conversion-detail-value" style="color: var(--primary);">R$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="glass-panel" style="background: transparent; border: none; padding: 0;">
+                    <h4 style="font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Cronograma de Injeções Diárias</h4>
+                    <div id="monitor-days-list" style="max-height: 280px; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 8px;">
+                        <!-- Injetado via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay de Login -->
+    <div id="login-overlay" class="login-overlay visible">
+        <div class="login-box glass-panel">
+            <div class="login-brand">
+                <i class="fa-solid fa-building-columns"></i>
+                <h1>LaundrFlow</h1>
+                <span>Acesso ao Sistema</span>
+            </div>
+
+            <form id="login-form" class="login-form">
+                <div class="settings-field">
+                    <label for="login-user">Usuário</label>
+                    <input type="text" id="login-user" placeholder="seu usuário" autocomplete="username" spellcheck="false" required>
+                </div>
+                <div class="settings-field">
+                    <label for="login-pass">Senha</label>
+                    <input type="password" id="login-pass" placeholder="sua senha" autocomplete="current-password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary login-submit" id="login-submit">
+                    <i class="fa-solid fa-right-to-bracket"></i> Entrar
+                </button>
+
+                <div class="settings-status" id="login-status" style="display: none;"></div>
+
+                <button type="button" class="login-config-toggle" id="login-config-toggle">
+                    <i class="fa-solid fa-gear"></i> Configurar servidor
+                </button>
+                <div class="login-config" id="login-config" style="display: none;">
+                    <div class="settings-field">
+                        <label for="login-api-url">URL da API</label>
+                        <input type="text" id="login-api-url" placeholder="https://seu-servidor.up.railway.app" autocomplete="off" spellcheck="false">
+                        <small>Endereço do servidor central. Salvo nesta máquina.</small>
+                    </div>
+                    <div class="settings-actions">
+                        <button type="button" class="btn btn-secondary" id="login-test-api">
+                            <i class="fa-solid fa-plug-circle-check"></i> Testar
+                        </button>
+                        <button type="button" class="btn btn-primary" id="login-save-api">
+                            <i class="fa-solid fa-floppy-disk"></i> Salvar
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Script Principal -->
+    <script src="app_v1.js"></script>
+    <!-- Camada de API: login, cargos e sincronização com o servidor central -->
+    <script src="client_api.js"></script>
+</body>
+</html>

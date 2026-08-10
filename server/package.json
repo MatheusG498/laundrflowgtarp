@@ -1,0 +1,22 @@
+{
+  "name": "laundrflow-server",
+  "version": "1.0.0",
+  "description": "API central do LaundrFlow: autenticação, usuários, cargos e dados (MongoDB Atlas).",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.8.0"
+  }
+}

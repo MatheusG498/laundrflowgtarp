@@ -1,0 +1,23 @@
+# ===== Segredos (NUNCA subir) =====
+.env
+*.env
+!*.env.example
+server/.env
+
+# ===== Node =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Rust / Tauri =====
+src-tauri/target/
+target/
+
+# ===== Config local do Claude Code =====
+.claude/settings.local.json
+
+# ===== Sistema =====
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,25 @@
+# Blueprint do Render — deploy gratuito do servidor LaundrFlow.
+# No Render: New + -> Blueprint -> conecte este repositório.
+# Depois preencha as variáveis marcadas como sync:false no painel.
+services:
+  - type: web
+    name: laundrflow-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: MONGODB_URI
+        sync: false          # cole a connection string do Atlas no painel
+      - key: DB_NAME
+        value: laundrflow
+      - key: JWT_SECRET
+        generateValue: true  # o Render gera um segredo forte automaticamente
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false          # defina a senha inicial do admin no painel
