@@ -21,9 +21,9 @@ router.get("/", async (_req, res) => {
   res.json({ users: await Promise.all(users.map(withRole)) });
 });
 
-// POST /users  { username, password, roleId }
+// POST /users  { username, password, roleId, organization? }
 router.post("/", async (req, res) => {
-  const { username, password, roleId } = req.body || {};
+  const { username, password, roleId, organization } = req.body || {};
   if (!username || !password || !roleId) {
     return res.status(400).json({ error: "Informe usuário, senha e cargo." });
   }
@@ -48,6 +48,7 @@ router.post("/", async (req, res) => {
     username: uname,
     passwordHash: await hashPassword(String(password)),
     roleId: roleOid,
+    organization: (organization && String(organization).trim()) || null, // null = Todos
     active: true,
     createdAt: new Date().toISOString(),
   };
@@ -68,7 +69,11 @@ router.patch("/:id", async (req, res) => {
   if (!user) return res.status(404).json({ error: "Usuário não encontrado." });
 
   const update = {};
-  const { roleId, active, password } = req.body || {};
+  const { roleId, active, password, organization } = req.body || {};
+
+  if (organization !== undefined) {
+    update.organization = (organization && String(organization).trim()) || null;
+  }
 
   if (roleId !== undefined) {
     let roleOid;

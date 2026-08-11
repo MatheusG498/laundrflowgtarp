@@ -837,6 +837,8 @@ select optgroup {
 .tx-step-dep { background: rgba(0, 229, 255, 0.1); color: var(--color-primary); }
 .tx-step-est { background: rgba(255, 179, 0, 0.1); color: var(--color-warning); }
 .tx-step-int { background: rgba(0, 255, 136, 0.1); color: var(--color-success); }
+.tx-step-venda { background: rgba(0, 255, 136, 0.1); color: var(--color-success); }
+.tx-step-compra { background: rgba(138, 180, 255, 0.12); color: #8ab4ff; }
 
 .tx-status-dot {
     display: inline-flex;
@@ -1725,11 +1727,124 @@ input[type="number"] {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
     background: rgba(255, 255, 255, 0.02);
     border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 8px;
     padding: 8px 12px;
     transition: var(--transition-fast);
+}
+
+/* Campo de observação (textarea) nos formulários */
+.form-group textarea {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: var(--text-primary);
+    font-size: 13px;
+    font-family: var(--font-main);
+    outline: none;
+    resize: vertical;
+    min-height: 42px;
+    transition: var(--transition-fast);
+}
+.form-group textarea:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+}
+.form-group textarea::placeholder {
+    color: var(--text-dark);
+}
+.label-optional {
+    color: var(--text-muted);
+    font-weight: 400;
+    text-transform: none;
+    font-size: 10px;
+}
+
+/* Nota de observação no Livro-Razão */
+.tx-obs-note {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    font-style: italic;
+}
+.tx-obs-note i {
+    color: var(--color-warning);
+    font-size: 9px;
+    margin-top: 2px;
+}
+
+/* Autor da transação no Livro-Razão (trilha de auditoria) */
+.tx-author {
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.tx-author i {
+    color: var(--color-primary);
+    font-size: 9px;
+}
+
+/* Indicador de valor faltante no card de operação (Monitoramento) */
+.conversion-badge.shortfall {
+    background: rgba(var(--color-warning-rgb), 0.15);
+    color: var(--color-warning);
+    border: 1px solid rgba(var(--color-warning-rgb), 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+.conversion-card.has-shortfall {
+    border-color: rgba(var(--color-warning-rgb), 0.4);
+    box-shadow: 0 0 0 1px rgba(var(--color-warning-rgb), 0.15);
+}
+
+/* Linha do valor faltante (redundância de compensação) */
+.monitor-day-shortfall {
+    flex-basis: 100%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed rgba(var(--color-warning-rgb), 0.25);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--color-warning);
+}
+.monitor-day-shortfall.compensated {
+    color: var(--color-success);
+    border-top-color: rgba(var(--color-success-rgb), 0.25);
+}
+.btn-day-missing {
+    background: rgba(var(--color-warning-rgb), 0.15);
+    color: var(--color-warning);
+    border: 1px solid rgba(var(--color-warning-rgb), 0.4);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: var(--transition-fast);
+}
+.btn-day-missing:hover {
+    background: rgba(var(--color-warning-rgb), 0.28);
 }
 
 .monitor-day-row:hover {
@@ -1832,6 +1947,181 @@ input[type="number"] {
 /* Permitir clique do mouse no card */
 .conversion-card {
     cursor: pointer;
+}
+
+/* --- Livro-Razão: agrupamento por organização --- */
+.ledger-group-header td {
+    background: rgba(var(--color-primary-rgb), 0.09);
+    border-top: 2px solid rgba(var(--color-primary-rgb), 0.35);
+    border-bottom: 1px solid rgba(var(--color-primary-rgb), 0.15);
+    padding: 11px 16px !important;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.ledger-group-header td i {
+    color: var(--color-primary);
+    margin-right: 8px;
+}
+.ledger-group-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-left: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+.ledger-group-totals {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+/* Grupo separado das Conversões Seguras */
+.ledger-group-conversion td {
+    background: rgba(var(--color-success-rgb), 0.09);
+    border-top: 2px solid rgba(var(--color-success-rgb), 0.35);
+    border-bottom: 1px solid rgba(var(--color-success-rgb), 0.15);
+}
+.ledger-group-conversion td i {
+    color: var(--color-success);
+}
+
+/* Linha-pai expansível de uma operação de conversão */
+.conv-parent {
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+.conv-parent:hover td {
+    background: rgba(var(--color-success-rgb), 0.05);
+}
+.conv-detail-icon {
+    color: var(--color-success);
+    font-size: 11px;
+    margin-right: 6px;
+}
+.conv-count {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-success);
+    background: rgba(var(--color-success-rgb), 0.12);
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+
+/* Fluxo origem → destino (organização em destaque + canal) nas conversões */
+.ledger-flow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex-wrap: wrap;
+}
+.ledger-flow > i {
+    color: var(--color-success);
+    font-size: 10px;
+}
+.flow-node {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+.flow-org {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 12px;
+}
+.flow-scheme {
+    font-weight: 500;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+/* --- Filtro "apenas produtos finais" na movimentação --- */
+.stock-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-top: 8px;
+}
+.stock-filter-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+    margin: 0;
+}
+.stock-filter-toggle input[type="checkbox"]:checked + span {
+    color: var(--color-primary);
+}
+
+/* --- Toggle "Aplicar taxa" no Lançamento Direto --- */
+.tax-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.tax-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+    margin: 0;
+}
+.tax-toggle input[type="checkbox"]:checked + span {
+    color: var(--color-primary);
+}
+#tx-tax:disabled {
+    cursor: not-allowed;
+}
+
+/* --- Gerenciador de Estoque: campos de receita do novo produto --- */
+#recipe-inputs-container {
+    max-height: 200px;
+}
+.recipe-input-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.22);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+.recipe-input-name {
+    font-size: 12px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.recipe-input-row input {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: center;
+    padding: 5px 6px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 5px;
+    font-size: 12px;
+    outline: none;
+}
+.recipe-input-row input:focus {
+    border-color: var(--border-focus);
 }
 
 /* --- Tela: Banco de Dados / Configurações --- */
@@ -2061,6 +2351,56 @@ input[type="number"] {
     box-shadow: 0 0 8px rgba(var(--color-warning-rgb), 0.6);
 }
 
+/* --- Diálogo customizado (confirm/prompt) --- */
+.ui-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    backdrop-filter: blur(2px);
+}
+.ui-dialog {
+    width: 100%;
+    max-width: 400px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.ui-dialog-msg {
+    font-size: 14px;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+.ui-dialog-input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 11px 14px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: var(--font-main);
+    outline: none;
+}
+.ui-dialog-input:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+}
+.ui-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+.ui-dialog-actions .btn {
+    min-width: 110px;
+    justify-content: center;
+}
+
 /* --- Login Overlay --- */
 .login-overlay {
     display: none;
@@ -2122,6 +2462,28 @@ input[type="number"] {
     border-color: var(--border-focus);
     box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
 }
+.login-remember {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    margin-top: -4px;
+}
+.login-remember input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--color-primary);
+    cursor: pointer;
+    margin: 0;
+    flex-shrink: 0;
+}
+.login-remember input[type="checkbox"]:checked ~ span {
+    color: var(--text-primary);
+}
+
 .login-submit {
     justify-content: center;
     margin-top: 4px;
@@ -2209,8 +2571,6 @@ input[type="number"] {
     flex-direction: column;
     gap: 8px;
     margin-top: 16px;
-    max-height: 340px;
-    overflow-y: auto;
 }
 .admin-item {
     display: flex;
@@ -2272,6 +2632,36 @@ input[type="number"] {
     color: var(--text-muted);
     font-size: 12px;
     padding: 16px;
+}
+.admin-item.editing {
+    border-color: rgba(var(--color-primary-rgb), 0.5);
+    box-shadow: 0 0 0 1px rgba(var(--color-primary-rgb), 0.2);
+}
+/* Cargo por usuário (seletor pesquisável compacto na lista) */
+.admin-role-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+.admin-role-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.mini-searchable {
+    width: 190px;
+    max-width: 190px;
+}
+.mini-searchable .searchable-select-trigger {
+    padding: 6px 10px;
+    font-size: 12px;
+}
+.mini-searchable .searchable-select-dropdown {
+    font-size: 12px;
+}
+.mini-searchable .searchable-option {
+    padding: 7px 10px;
 }
 .settings-status code,
 .settings-field code {

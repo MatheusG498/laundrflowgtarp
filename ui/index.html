@@ -328,7 +328,13 @@
                                         <input type="text" id="tx-amount" placeholder="R$ 0,00" oninput="window.maskMoney(this)" required>
                                     </div>
                                     <div class="form-group" style="flex: 1;">
-                                        <label for="tx-tax">Taxa (%)</label>
+                                        <label for="tx-tax" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                                            <span>Taxa (%)</span>
+                                            <label class="tax-toggle" title="Ativar/desativar a taxa">
+                                                <input type="checkbox" id="tx-tax-enabled" checked>
+                                                <span>Aplicar</span>
+                                            </label>
+                                        </label>
                                         <input type="number" id="tx-tax" min="0" max="100" step="0.1" placeholder="Ex: 10" required>
                                     </div>
                                     <div class="form-group" style="flex: 1.5;">
@@ -338,30 +344,30 @@
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group">
-                                        <label for="tx-type">Etapa do Fluxo</label>
-                                        <select id="tx-type" required>
-                                            <option value="Depósito">1. Depósito (Inserção do capital)</option>
-                                            <option value="Estratificação">2. Estratificação (Mescla/Transferências)</option>
-                                            <option value="Integração">3. Integração (Saída como capital limpo)</option>
-                                        </select>
+                                        <label>Etapa do Fluxo</label>
+                                        <div id="tx-type-container" class="searchable-select-container"></div>
                                     </div>
                                     <div class="form-group">
-                                        <label for="tx-status">Status da Transação</label>
-                                        <select id="tx-status" required>
-                                            <option value="Processando">Em Processamento</option>
-                                            <option value="Pendente">Aguardando Envio</option>
-                                            <option value="Limpo">Consolidado / Limpo</option>
-                                        </select>
+                                        <label>Status da Transação</label>
+                                        <div id="tx-status-container" class="searchable-select-container"></div>
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="tx-desc">Descrição / Justificativa Comercial</label>
                                     <input type="text" id="tx-desc" placeholder="Ex: Prestação de serviços de marketing, venda de mercadorias" required>
                                 </div>
+                                <div class="form-group">
+                                    <label for="tx-obs">Observação <span class="label-optional">(opcional)</span></label>
+                                    <textarea id="tx-obs" rows="2" placeholder="Anotações internas sobre este lançamento"></textarea>
+                                </div>
                                 <div class="form-group dynamic-stock-field hidden" id="tx-stock-movements-section" style="margin-top: 15px; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 15px;">
                                     <label style="display: flex; justify-content: space-between; align-items: center;">
                                         <span>Itens da Movimentação de Estoque</span>
                                         <span style="font-size: 11px; color: var(--text-muted);">Adicione múltiplos itens e quantidades</span>
+                                    </label>
+                                    <label class="stock-filter-toggle">
+                                        <input type="checkbox" id="tx-stock-products-only">
+                                        <span>Mostrar apenas produtos finais</span>
                                     </label>
                                     <div id="tx-stock-movements-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
                                         <!-- Injetado dinamicamente via JS -->
@@ -370,6 +376,27 @@
                                         <i class="fa-solid fa-plus"></i> Adicionar Item à Movimentação
                                     </button>
                                 </div>
+                                <!-- Preview do cálculo de taxa (Lançamento Direto) -->
+                                <div class="conversion-preview-panel" id="tx-preview-panel" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px;">
+                                    <h4 style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--color-primary); margin-bottom: 12px; letter-spacing: 0.5px;">
+                                        <i class="fa-solid fa-calculator"></i> Cálculo do Lançamento
+                                    </h4>
+                                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                                        <div style="display: flex; justify-content: space-between;">
+                                            <span style="color: var(--text-muted);">Valor Bruto:</span>
+                                            <span id="tx-preview-bruto" style="font-weight: 600;">R$ 0,00</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;" id="tx-preview-taxa-row">
+                                            <span style="color: var(--text-muted);">Taxa Aplicada (<span id="tx-preview-taxa-pct">0</span>%):</span>
+                                            <span id="tx-preview-taxa" style="color: var(--color-warning); font-weight: 600;">- R$ 0,00</span>
+                                        </div>
+                                        <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; padding-top: 4px;">
+                                            <span style="color: var(--text-primary);">Valor Líquido:</span>
+                                            <span id="tx-preview-liquido" style="color: var(--color-success);">R$ 0,00</span>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button type="submit" class="btn btn-primary btn-block">
                                     <i class="fa-solid fa-floppy-disk"></i> Confirmar Lançamento
                                 </button>
@@ -431,6 +458,10 @@
                                     <label for="conv-desc">Justificativa Comercial / Descrição</label>
                                     <input type="text" id="conv-desc" placeholder="Ex: Dividendos de holding, reembolso corporativo" required>
                                 </div>
+                                <div class="form-group">
+                                    <label for="conv-obs">Observação <span class="label-optional">(opcional)</span></label>
+                                    <textarea id="conv-obs" rows="2" placeholder="Anotações internas sobre esta operação"></textarea>
+                                </div>
 
                                 <!-- Painel Dinâmico de Simulação (Preview) -->
                                 <div class="conversion-preview-panel" style="background: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin: 20px 0; font-size: 13px;">
@@ -489,6 +520,26 @@
                     </div>
 
                     <div style="margin-top: 20px;">
+                        <!-- Seção 0: Lançamentos Diretos em Processamento -->
+                        <div class="glass-panel" style="margin-bottom: 25px;">
+                            <h3 style="margin-bottom: 18px; font-size: 14px; font-weight: 600; color: var(--color-warning); display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-hourglass-half"></i> Lançamentos em Processamento
+                            </h3>
+                            <div id="processing-launches-list" class="conversions-grid">
+                                <!-- Injetado via JS -->
+                            </div>
+                        </div>
+
+                        <!-- Seção 0b: Histórico de Lançamentos Diretos -->
+                        <div class="glass-panel" style="margin-bottom: 25px;">
+                            <h3 style="margin-bottom: 18px; font-size: 14px; font-weight: 600; color: var(--color-success); display: flex; align-items: center; gap: 8px;">
+                                <i class="fa-solid fa-clipboard-check"></i> Histórico de Lançamentos
+                            </h3>
+                            <div id="processed-launches-list" class="conversions-grid">
+                                <!-- Injetado via JS -->
+                            </div>
+                        </div>
+
                         <!-- Seção 1: Operações em Andamento -->
                         <div class="glass-panel" style="margin-bottom: 25px;">
                             <h3 style="margin-bottom: 18px; font-size: 14px; font-weight: 600; color: var(--primary); display: flex; align-items: center; gap: 8px;">
@@ -520,16 +571,8 @@
                                 <input type="text" id="ledger-search" placeholder="Buscar por descrição, esquema ou hash...">
                             </div>
                             <div class="filter-box">
-                                <select id="ledger-filter-scheme">
-                                    <option value="all">Todos os Esquemas</option>
-                                    <!-- Preenchido via JS -->
-                                </select>
-                                <select id="ledger-filter-type">
-                                    <option value="all">Todas as Etapas</option>
-                                    <option value="Depósito">Depósito</option>
-                                    <option value="Estratificação">Estratificação</option>
-                                    <option value="Integração">Integração</option>
-                                </select>
+                                <div id="ledger-filter-scheme-container" class="searchable-select-container"></div>
+                                <div id="ledger-filter-type-container" class="searchable-select-container"></div>
                             </div>
                         </div>
                         <div class="ledger-actions">
@@ -675,8 +718,12 @@
                                     <input type="password" id="new-user-pass" placeholder="senha inicial" autocomplete="off">
                                 </div>
                                 <div class="settings-field">
-                                    <label for="new-user-role">Cargo</label>
-                                    <select id="new-user-role" class="settings-select"></select>
+                                    <label>Cargo</label>
+                                    <div id="new-user-role-container" class="searchable-select-container"></div>
+                                </div>
+                                <div class="settings-field">
+                                    <label>Organização <span class="label-optional">(o usuário só vê esta)</span></label>
+                                    <div id="new-user-org-container" class="searchable-select-container"></div>
                                 </div>
                                 <button class="btn btn-primary" id="btn-add-user">
                                     <i class="fa-solid fa-user-plus"></i> Criar Usuário
@@ -713,9 +760,14 @@
                                 <label class="perm-toggle">
                                     <input type="checkbox" id="new-role-admin"> É administrador (gerencia usuários e cargos)
                                 </label>
-                                <button class="btn btn-primary" id="btn-add-role">
-                                    <i class="fa-solid fa-plus"></i> Criar Cargo
-                                </button>
+                                <div class="settings-actions">
+                                    <button class="btn btn-primary" id="btn-add-role" style="flex: 1;">
+                                        <i class="fa-solid fa-plus"></i> Criar Cargo
+                                    </button>
+                                    <button class="btn btn-secondary" id="btn-cancel-role" style="display: none;">
+                                        <i class="fa-solid fa-xmark"></i> Cancelar
+                                    </button>
+                                </div>
                             </div>
 
                             <div class="settings-status" id="role-status" style="display: none;"></div>
@@ -911,6 +963,9 @@
                         <div><strong>Origem (Fachada):</strong> <span id="monitor-details-source" style="color: var(--text-primary);">...</span></div>
                         <div><strong>Destino (Legítimo):</strong> <span id="monitor-details-dest" style="color: var(--text-primary);">...</span></div>
                     </div>
+                    <div id="monitor-details-obs-wrapper" style="display: none; margin-top: 8px; padding-top: 8px; border-top: 1px dashed rgba(255,255,255,0.06); font-size: 11px; color: var(--text-muted);">
+                        <strong><i class="fa-solid fa-note-sticky"></i> Observação:</strong> <span id="monitor-details-obs" style="color: var(--text-primary);"></span>
+                    </div>
                 </div>
 
                 <div class="conversion-details-grid" style="background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); border-radius: 8px; padding: 10px; margin-bottom: 16px;">
@@ -952,6 +1007,11 @@
                     <label for="login-pass">Senha</label>
                     <input type="password" id="login-pass" placeholder="sua senha" autocomplete="current-password" required>
                 </div>
+
+                <label class="login-remember">
+                    <input type="checkbox" id="login-remember">
+                    <span>Lembrar credenciais</span>
+                </label>
 
                 <button type="submit" class="btn btn-primary login-submit" id="login-submit">
                     <i class="fa-solid fa-right-to-bracket"></i> Entrar

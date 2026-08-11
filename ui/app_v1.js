@@ -12,6 +12,51 @@ let state = {
 // Expõe o estado globalmente para a camada de sincronização (db_sync.js).
 window.state = state;
 
+// Confirmação customizada (funciona no Tauri); cai no confirm nativo se indisponível
+function appConfirm(message, opts) {
+    if (window.LaundrUI && window.LaundrUI.confirm) return window.LaundrUI.confirm(message, opts);
+    return Promise.resolve(window.confirm(message));
+}
+
+// --- Escopo por organização (o usuário só enxerga a organização vinculada) ---
+// Organização do usuário logado (null = "Todos", vê todas)
+function getUserOrg() {
+    try {
+        const u = window.LaundrAPI && window.LaundrAPI.getUser && window.LaundrAPI.getUser();
+        return (u && u.organization) ? u.organization : null;
+    } catch (_) { return null; }
+}
+// Esquemas/clientes visíveis para o usuário
+function scopedSchemes() {
+    const org = getUserOrg();
+    if (!org) return state.schemes;
+    return state.schemes.filter(s => (s.organization || "Geral") === org);
+}
+// Transações visíveis (pertencentes aos esquemas da organização)
+function scopedTransactions() {
+    const org = getUserOrg();
+    if (!org) return state.transactions;
+    const ids = new Set(scopedSchemes().map(s => s.id));
+    return state.transactions.filter(t => ids.has(t.schemeId));
+}
+// Conversões visíveis (origem OU destino na organização do usuário)
+function scopedConversions() {
+    const org = getUserOrg();
+    const convs = state.conversions || [];
+    if (!org) return convs;
+    const ids = new Set(scopedSchemes().map(s => s.id));
+    return convs.filter(c => ids.has(c.sourceSchemeId) || ids.has(c.destSchemeId));
+}
+
+// Usuário logado que está criando a transação (trilha de auditoria)
+function currentTxUser() {
+    try {
+        return (window.LaundrAPI && window.LaundrAPI.getUsername && window.LaundrAPI.getUsername()) || "Sistema";
+    } catch (_) {
+        return "Sistema";
+    }
+}
+
 // Dados padrão caso o app seja aberto pela primeira vez
 const defaultSchemes = [
     {
@@ -350,6 +395,7 @@ window.initSearchableSelect = function(containerId, options, config = {}) {
     const inputId = config.inputId || `input-searchable-${Date.now()}-${Math.floor(Math.random()*1000)}`;
     const initialValue = config.initialValue || "";
     const onSelect = config.onSelect || null;
+    const hideSearch = config.hideSearch === true; // esconde a caixa de busca (listas curtas)
 
     // Reseta o conteúdo anterior do container
     container.innerHTML = "";
@@ -376,9 +422,13 @@ window.initSearchableSelect = function(containerId, options, config = {}) {
     const dropdown = document.createElement("div");
     dropdown.className = "searchable-select-dropdown hidden";
 
-    const searchWrapper = document.createElement("div");
-    searchWrapper.className = "searchable-select-search-wrapper";
-    searchWrapper.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><input type="text" class="searchable-select-search" placeholder="Pesquisar...">`;
+    let searchWrapper = null;
+    let searchInput = null;
+    if (!hideSearch) {
+        searchWrapper = document.createElement("div");
+        searchWrapper.className = "searchable-select-search-wrapper";
+        searchWrapper.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><input type="text" class="searchable-select-search" placeholder="Pesquisar...">`;
+    }
 
     const optionsContainer = document.createElement("div");
     optionsContainer.className = "searchable-select-options";
@@ -424,10 +474,12 @@ window.initSearchableSelect = function(containerId, options, config = {}) {
 
     populate();
 
-    const searchInput = searchWrapper.querySelector(".searchable-select-search");
-    searchInput.addEventListener("input", (e) => {
-        populate(e.target.value);
-    });
+    if (searchWrapper) {
+        searchInput = searchWrapper.querySelector(".searchable-select-search");
+        searchInput.addEventListener("input", (e) => {
+            populate(e.target.value);
+        });
+    }
 
     trigger.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -444,15 +496,15 @@ window.initSearchableSelect = function(containerId, options, config = {}) {
         const isOpen = container.classList.toggle("open");
         if (isOpen) {
             dropdown.classList.remove("hidden");
-            searchInput.value = "";
+            if (searchInput) searchInput.value = "";
             populate();
-            setTimeout(() => searchInput.focus(), 50);
+            if (searchInput) setTimeout(() => searchInput.focus(), 50);
         } else {
             dropdown.classList.add("hidden");
         }
     });
 
-    dropdown.appendChild(searchWrapper);
+    if (searchWrapper) dropdown.appendChild(searchWrapper);
     dropdown.appendChild(optionsContainer);
 
     container.appendChild(hiddenInput);
@@ -623,41 +675,45 @@ let chartTimelineInstance = null;
 
 // Dashboard
 function updateDashboard() {
+    // Dados no escopo da organização do usuário (ou tudo, se "Todos")
+    const txs = scopedTransactions();
+    const schemes = scopedSchemes();
+
     // Cálculos
     // Total depositado nos canais de fachada (sujo)
-    const totalDeposited = state.transactions
+    const totalDeposited = txs
         .filter(t => {
-            const s = state.schemes.find(sc => sc.id === t.schemeId);
+            const s = schemes.find(sc => sc.id === t.schemeId);
             return t.type === "Depósito" && (!s || s.type !== "legal");
         })
         .reduce((sum, t) => sum + t.amount, 0);
 
     // Total lavado integrado (limpo da fachada)
-    const totalIntegrated = state.transactions
+    const totalIntegrated = txs
         .filter(t => {
-            const s = state.schemes.find(sc => sc.id === t.schemeId);
+            const s = schemes.find(sc => sc.id === t.schemeId);
             return t.type === "Integração" && t.status === "Limpo" && (!s || s.type !== "legal");
         })
         .reduce((sum, t) => sum + t.netAmount, 0);
 
     // Faturamento líquido dos canais 100% legais
-    const totalLegalNet = state.transactions
+    const totalLegalNet = txs
         .filter(t => {
-            const s = state.schemes.find(sc => sc.id === t.schemeId);
+            const s = schemes.find(sc => sc.id === t.schemeId);
             return s && s.type === "legal";
         })
         .reduce((sum, t) => sum + t.netAmount, 0);
 
     // Impostos pagos dos canais legais
-    const totalLegalTax = state.transactions
+    const totalLegalTax = txs
         .filter(t => {
-            const s = state.schemes.find(sc => sc.id === t.schemeId);
+            const s = schemes.find(sc => sc.id === t.schemeId);
             return s && s.type === "legal";
         })
         .reduce((sum, t) => sum + t.cost, 0);
 
     // Custos operacionais gerais (taxas de fachada + impostos legais)
-    const totalLosses = state.transactions
+    const totalLosses = txs
         .reduce((sum, t) => sum + t.cost, 0);
 
     // Taxa de eficiência da lavagem (fachada)
@@ -683,12 +739,12 @@ function updateDashboard() {
     
     document.getElementById("metric-losses").textContent = formatCurrency(totalLosses);
     
-    const avgTax = state.schemes.length > 0 
-        ? (state.schemes.reduce((sum, s) => sum + s.tax, 0) / state.schemes.length).toFixed(1) 
+    const avgTax = schemes.length > 0
+        ? (schemes.reduce((sum, s) => sum + s.tax, 0) / schemes.length).toFixed(1)
         : "0.0";
     document.getElementById("metric-losses-pct").textContent = `Taxa operacional média: ${avgTax}%`;
-    
-    document.getElementById("metric-schemes-count").textContent = state.schemes.length;
+
+    document.getElementById("metric-schemes-count").textContent = schemes.length;
 
     // Atualiza Gráficos
     renderCharts();
@@ -699,14 +755,18 @@ function renderCharts() {
     const ctxDist = document.getElementById("chart-distribution").getContext("2d");
     const ctxTime = document.getElementById("chart-timeline").getContext("2d");
 
+    // Dados no escopo da organização do usuário
+    const txs = scopedTransactions();
+    const schemes = scopedSchemes();
+
     // Gráfico 1: Distribuição por Canal (Esquema)
     const schemeAmounts = {};
-    state.schemes.forEach(s => {
+    schemes.forEach(s => {
         schemeAmounts[s.name] = 0;
     });
 
-    state.transactions.forEach(t => {
-        const scheme = state.schemes.find(s => s.id === t.schemeId);
+    txs.forEach(t => {
+        const scheme = schemes.find(s => s.id === t.schemeId);
         if (scheme) {
             schemeAmounts[scheme.name] += t.amount;
         }
@@ -756,7 +816,7 @@ function renderCharts() {
     // Gráfico 2: Evolução de Caixa (Linha do Tempo)
     // Agrupa depósitos vs integrações limpas por data
     const timelineData = {};
-    state.transactions.forEach(t => {
+    txs.forEach(t => {
         if (!timelineData[t.date]) {
             timelineData[t.date] = { deposited: 0, integrated: 0 };
         }
@@ -880,7 +940,7 @@ function renderSchemes() {
 
     // Agrupa os esquemas de fachada por organização
     const groups = {};
-    const fachadaSchemes = state.schemes.filter(s => s.type !== "legal");
+    const fachadaSchemes = scopedSchemes().filter(s => s.type !== "legal");
     
     if (fachadaSchemes.length === 0) {
         listEl.innerHTML = `<div class="no-records"><i class="fa-solid fa-user-secret"></i><p>Nenhum cliente ilegal cadastrado.</p></div>`;
@@ -1122,7 +1182,7 @@ function renderLegalSchemes() {
 
     // Agrupa os esquemas legítimos por organização
     const groups = {};
-    const legalSchemes = state.schemes.filter(s => s.type === "legal");
+    const legalSchemes = scopedSchemes().filter(s => s.type === "legal");
     
     if (legalSchemes.length === 0) {
         listEl.innerHTML = `<div class="no-records"><i class="fa-solid fa-briefcase"></i><p>Nenhum cliente legítimo cadastrado.</p></div>`;
@@ -1477,18 +1537,19 @@ function renderStockModal() {
                     `);
                 }
 
-                // Permite também adicionar novos insumos configurando valor > 0
+                // Seletor para adicionar novos insumos à receita (mais limpo que listar todos)
                 const unusedInsumos = allInsumos.filter(ins => item.recipe[ins.id] === undefined);
-                unusedInsumos.forEach(insumo => {
-                    recipeParts.push(`
-                        <div style="display: inline-flex; align-items: center; gap: 2px; margin-right: 8px; margin-bottom: 4px; opacity: 0.5; background: rgba(255,255,255,0.02); padding: 2px 6px; border-radius: 4px; border: 1px dashed var(--border-color);">
-                            <input type="number" value="0" min="0" onchange="updateItemRecipeQty('${scheme.id}', '${item.id}', '${insumo.id}', parseInt(this.value) || 0)" style="width: 32px; font-size: 10px; padding: 1px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-color); color: var(--text-primary); text-align: center; border-radius: 3px;">
-                            <span style="font-size: 11px;">+ ${insumo.name}</span>
-                        </div>
-                    `);
-                });
+                let addInsumoSelect = "";
+                if (unusedInsumos.length > 0) {
+                    addInsumoSelect = `
+                        <select onchange="if(this.value){window.updateItemRecipeQty('${scheme.id}','${item.id}',this.value,1);}" style="font-size: 11px; padding: 3px 6px; background: rgba(0,0,0,0.3); border: 1px dashed var(--border-color); color: var(--text-muted); border-radius: 4px; cursor: pointer; margin-top: 2px;">
+                            <option value="">+ Adicionar insumo</option>
+                            ${unusedInsumos.map(ins => `<option value="${ins.id}">${ins.name}</option>`).join("")}
+                        </select>`;
+                }
 
-                const recipeHtml = recipeParts.length > 0 ? recipeParts.join("") : `<span class="text-muted" style="font-size: 11px;">Adicione insumos à receita</span>`;
+                const activeChips = recipeParts.length > 0 ? recipeParts.join("") : `<span class="text-muted" style="font-size: 11px;">Nenhum insumo na receita ainda.</span>`;
+                const recipeHtml = activeChips + addInsumoSelect;
 
                 // Calcula a capacidade de produção baseada em insumos
                 let maxProduce = Infinity;
@@ -1674,9 +1735,30 @@ window.addStockItem = function(e) {
     alert("Item cadastrado com sucesso!");
 };
 
+// Gera os campos de insumos da receita no formulário de novo produto composto
+window.renderNewProductRecipeInputs = function() {
+    const container = document.getElementById("recipe-inputs-container");
+    if (!container || !currentStockSchemeId) return;
+    const scheme = state.schemes.find(s => s.id === currentStockSchemeId);
+    if (!scheme) return;
+
+    const insumos = (scheme.items || []).filter(i => i.type === "insumo");
+    if (insumos.length === 0) {
+        container.innerHTML = '<p style="font-size: 11px; color: var(--color-warning); margin: 0;">Cadastre pelo menos um insumo antes de criar um produto composto.</p>';
+        return;
+    }
+
+    container.innerHTML = insumos.map(ins => `
+        <div class="recipe-input-row">
+            <span class="recipe-input-name">${ins.name}</span>
+            <input type="number" class="recipe-qty-input" data-insumo-id="${ins.id}" min="0" value="0" placeholder="0">
+        </div>
+    `).join("");
+};
+
 // Excluir Item de Estoque
-window.deleteStockItem = function(schemeId, itemId) {
-    if (!confirm("Tem certeza que deseja remover este item de estoque?")) return;
+window.deleteStockItem = async function(schemeId, itemId) {
+    if (!(await appConfirm("Tem certeza que deseja remover este item de estoque?", { danger: true, okText: "Remover" }))) return;
 
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (scheme && scheme.items) {
@@ -1759,6 +1841,53 @@ window.produceProduct = function(schemeId, productId) {
 // Instâncias reativas globais dos seletores de Lançamento
 let searchableTxOrg = null;
 let searchableTxScheme = null;
+let searchableTxType = null;
+let searchableTxStatus = null;
+
+// Opções de Etapa do Fluxo e Status (usadas nos seletores pesquisáveis)
+const TX_TYPE_OPTIONS = [
+    { value: "Depósito", label: "1. Depósito (Inserção do capital)" },
+    { value: "Estratificação", label: "2. Estratificação (Mescla/Transferências)" },
+    { value: "Integração", label: "3. Integração (Saída como capital limpo)" },
+    { value: "Venda", label: "Venda de Mercadorias/Insumos" },
+    { value: "Compra", label: "Compra de Mercadorias/Insumos" }
+];
+// Para clientes legítimos: só as etapas de comércio real + integração
+const TX_TYPE_OPTIONS_LEGAL = [
+    { value: "Integração", label: "3. Integração (Saída como capital limpo)" },
+    { value: "Venda", label: "Venda de Mercadorias/Insumos" },
+    { value: "Compra", label: "Compra de Mercadorias/Insumos" }
+];
+const TX_STATUS_OPTIONS = [
+    { value: "Processando", label: "Em Processamento" },
+    { value: "Pendente", label: "Aguardando Envio" },
+    { value: "Limpo", label: "Consolidado / Limpo" }
+];
+const TX_STATUS_OPTIONS_LEGAL = [
+    { value: "Limpo", label: "Consolidado / Limpo" }
+];
+
+// Inicializa os seletores pesquisáveis de Etapa do Fluxo e Status
+function initTxTypeStatusSelects() {
+    const typeContainer = document.getElementById("tx-type-container");
+    const statusContainer = document.getElementById("tx-status-container");
+    if (typeContainer && !searchableTxType) {
+        searchableTxType = initSearchableSelect(typeContainer, TX_TYPE_OPTIONS, {
+            inputId: "tx-type",
+            placeholder: "Selecione a etapa...",
+            initialValue: "Depósito",
+            onSelect: () => { if (window.updateTxPreview) window.updateTxPreview(); }
+        });
+    }
+    if (statusContainer && !searchableTxStatus) {
+        searchableTxStatus = initSearchableSelect(statusContainer, TX_STATUS_OPTIONS, {
+            inputId: "tx-status",
+            placeholder: "Selecione o status...",
+            initialValue: "Processando"
+        });
+    }
+}
+document.addEventListener("DOMContentLoaded", initTxTypeStatusSelects);
 
 function populateSchemeSelect() {
     const orgContainer = document.getElementById("tx-org-container");
@@ -1766,7 +1895,7 @@ function populateSchemeSelect() {
     if (!orgContainer || !schemeContainer) return;
 
     // 1. Extrai organizações únicas
-    const orgs = [...new Set(state.schemes.map(s => s.organization || "Geral"))];
+    const orgs = [...new Set(scopedSchemes().map(s => s.organization || "Geral"))];
     const orgOptions = orgs.map(org => ({ value: org, label: org.toUpperCase() }));
 
     // Salva seleções anteriores
@@ -1779,7 +1908,7 @@ function populateSchemeSelect() {
         inputId: "tx-org",
         initialValue: orgs.includes(prevOrgVal) ? prevOrgVal : "",
         onSelect: (selectedOrg) => {
-            const filteredSchemes = state.schemes.filter(s => (s.organization || "Geral") === selectedOrg);
+            const filteredSchemes = scopedSchemes().filter(s => (s.organization || "Geral") === selectedOrg);
             const schemeOptions = filteredSchemes.map(scheme => {
                 const prefix = scheme.type === "legal" ? "[LEGÍTIMO] " : "[FACHADA] ";
                 return { value: scheme.id, label: `${prefix}${scheme.name}` };
@@ -1802,7 +1931,7 @@ function populateSchemeSelect() {
 
     // Se já havia seleção anterior compatível, reconstrói negócios e tenta restaurar
     if (prevOrgVal && orgs.includes(prevOrgVal)) {
-        const filteredSchemes = state.schemes.filter(s => (s.organization || "Geral") === prevOrgVal);
+        const filteredSchemes = scopedSchemes().filter(s => (s.organization || "Geral") === prevOrgVal);
         const schemeOptions = filteredSchemes.map(scheme => {
             const prefix = scheme.type === "legal" ? "[LEGÍTIMO] " : "[FACHADA] ";
             return { value: scheme.id, label: `${prefix}${scheme.name}` };
@@ -1824,43 +1953,29 @@ function populateSchemeSelect() {
         });
     }
 
-    // Popula ledger-filter-scheme com optgroup (Mantido para filtros rápidos de busca)
-    if (filterSelectEl) {
-        filterSelectEl.innerHTML = '<option value="all">Todos os Esquemas</option>';
-        const groups = {};
-        state.schemes.forEach(scheme => {
-            const org = scheme.organization || "Geral";
-            if (!groups[org]) groups[org] = [];
-            groups[org].push(scheme);
-        });
-        for (const org in groups) {
-            const optgroup = document.createElement("optgroup");
-            optgroup.label = org;
-            groups[org].forEach(scheme => {
-                const option = document.createElement("option");
-                option.value = scheme.id;
-                option.textContent = scheme.name;
-                optgroup.appendChild(option);
-            });
-            filterSelectEl.appendChild(optgroup);
-        }
-    }
+    // O filtro de esquemas do Livro-Razão é atualizado por refreshLedgerSchemeFilter()
 }
 
 // Renderizar a tabela do Livro-Razão com filtros
 function renderLedger() {
     const tableBody = document.getElementById("ledger-table-body");
-    const searchVal = document.getElementById("ledger-search").value.toLowerCase();
-    const filterScheme = document.getElementById("ledger-filter-scheme").value;
-    const filterType = document.getElementById("ledger-filter-type").value;
-    const noRecordsMsg = document.getElementById("no-records-msg");
-
     if (!tableBody) return;
+
+    // Mantém o filtro de esquemas atualizado com os clientes atuais
+    if (typeof refreshLedgerSchemeFilter === "function") refreshLedgerSchemeFilter();
+
+    const searchEl = document.getElementById("ledger-search");
+    const schemeEl = document.getElementById("ledger-filter-scheme");
+    const typeEl = document.getElementById("ledger-filter-type");
+    const searchVal = (searchEl ? searchEl.value : "").toLowerCase();
+    const filterScheme = schemeEl ? schemeEl.value : "all";
+    const filterType = typeEl ? typeEl.value : "all";
+    const noRecordsMsg = document.getElementById("no-records-msg");
 
     tableBody.innerHTML = "";
 
     // Filtra as transações baseadas nos filtros
-    const filteredTxs = state.transactions.filter(tx => {
+    const filteredTxs = scopedTransactions().filter(tx => {
         const scheme = state.schemes.find(s => s.id === tx.schemeId);
         const schemeName = scheme ? scheme.name.toLowerCase() : "";
 
@@ -1875,23 +1990,46 @@ function renderLedger() {
         return matchesSearch && matchesScheme && matchesType;
     });
 
-    // Ordena de forma decrescente por data
-    const sortedTxs = [...filteredTxs].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    if (sortedTxs.length === 0) {
+    if (filteredTxs.length === 0) {
         noRecordsMsg.style.display = "block";
+        return;
     } else {
         noRecordsMsg.style.display = "none";
     }
 
-    sortedTxs.forEach(tx => {
+    // Monta o "Origem → Destino" mostrando a ORGANIZAÇÃO (principal) e o canal (secundário)
+    function buildFlowHtml(source, dest) {
+        const sOrg = source ? (source.organization || "Geral") : "Org. removida";
+        const sName = source ? source.name : "Canal removido";
+        const dOrg = dest ? (dest.organization || "Geral") : "Org. removida";
+        const dName = dest ? dest.name : "Canal removido";
+        return `<div class="ledger-flow">
+            <span class="flow-node"><span class="flow-org">${sOrg}</span><span class="flow-scheme">${sName}</span></span>
+            <i class="fa-solid fa-arrow-right-long"></i>
+            <span class="flow-node"><span class="flow-org">${dOrg}</span><span class="flow-scheme">${dName}</span></span>
+        </div>`;
+    }
+
+    // Monta a linha de uma transação (reaproveitada em cada grupo).
+    // Se `flow` for informado ({source, dest}), a coluna "Esquema" mostra origem → destino.
+    function buildLedgerRow(tx, flow) {
         const scheme = state.schemes.find(s => s.id === tx.schemeId);
         const schemeName = scheme ? scheme.name : "Esquema Removido";
-        
+
+        let schemeCell;
+        if (flow) {
+            schemeCell = buildFlowHtml(flow.source, flow.dest);
+        } else {
+            schemeCell = `<strong>${schemeName}</strong>`;
+        }
+
         let typeBadge = "";
         if (tx.type === "Depósito") typeBadge = `<span class="tx-step-badge tx-step-dep">Depósito</span>`;
         else if (tx.type === "Estratificação") typeBadge = `<span class="tx-step-badge tx-step-est">Mescla</span>`;
         else if (tx.type === "Integração") typeBadge = `<span class="tx-step-badge tx-step-int">Integração</span>`;
+        else if (tx.type === "Venda") typeBadge = `<span class="tx-step-badge tx-step-venda">Venda</span>`;
+        else if (tx.type === "Compra") typeBadge = `<span class="tx-step-badge tx-step-compra">Compra</span>`;
+        else typeBadge = `<span class="tx-step-badge">${tx.type || '—'}</span>`;
 
         let statusBadge = "";
         if (tx.status === "Limpo") statusBadge = `<span class="tx-status-dot status-clean">Consolidado</span>`;
@@ -1899,8 +2037,6 @@ function renderLedger() {
         else if (tx.status === "Pendente") statusBadge = `<span class="tx-status-dot status-pend">Aguardando</span>`;
 
         let stockBadge = '<span class="text-muted">-</span>';
-        
-        // Verifica se há múltiplos itens movimentados
         if (tx.stockMovements && tx.stockMovements.length > 0) {
             const badges = tx.stockMovements.map(mov => {
                 const item = scheme && scheme.items ? scheme.items.find(i => i.id === mov.itemId) : null;
@@ -1911,7 +2047,6 @@ function renderLedger() {
             });
             stockBadge = `<div style="display: flex; flex-direction: column;">${badges.join('')}</div>`;
         } else if (tx.stockQty !== undefined && tx.stockQty !== null && tx.stockItemId) {
-            // Fallback para transações antigas de item único
             const item = scheme && scheme.items ? scheme.items.find(i => i.id === tx.stockItemId) : null;
             const itemName = item ? item.name : "Item";
             const sign = tx.stockQty > 0 ? "+" : "";
@@ -1919,12 +2054,19 @@ function renderLedger() {
             stockBadge = `<span class="${color}">${sign}${tx.stockQty} ${itemName}</span>`;
         }
 
+        const authorLine = tx.createdBy
+            ? `<div class="tx-author"><i class="fa-solid fa-user-pen"></i> ${tx.createdBy}${tx.createdAt ? ` · ${new Date(tx.createdAt).toLocaleDateString('pt-BR')}` : ''}</div>`
+            : "";
+        const obsLine = tx.observation
+            ? `<div class="tx-obs-note"><i class="fa-solid fa-note-sticky"></i> ${tx.observation}</div>`
+            : "";
+
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>${tx.date}</td>
-            <td><strong>${schemeName}</strong></td>
+            <td>${schemeCell}</td>
             <td>${typeBadge}</td>
-            <td>${tx.description}</td>
+            <td>${tx.description}${obsLine}${authorLine}</td>
             <td>${formatCurrency(tx.amount)}</td>
             <td class="text-warning">${formatCurrency(tx.cost)}</td>
             <td class="text-success">${formatCurrency(tx.netAmount)}</td>
@@ -1932,8 +2074,121 @@ function renderLedger() {
             <td>${statusBadge}</td>
             <td class="hash-cell" title="Assinatura única auditável: ${tx.hash}">${tx.hash.substring(0, 10)}...${tx.hash.substring(54)}</td>
         `;
-        tableBody.appendChild(row);
+        return row;
+    }
+
+    // Mapeia cada transação gerada por conversão -> { origem, destino }, via day.txIds
+    const convByTxId = {};
+    (state.conversions || []).forEach(conv => {
+        const src = state.schemes.find(s => s.id === conv.sourceSchemeId);
+        const dst = state.schemes.find(s => s.id === conv.destSchemeId);
+        (conv.days || []).forEach(day => {
+            (day.txIds || []).forEach(txId => {
+                convByTxId[txId] = { source: src, dest: dst, conv: conv };
+            });
+        });
     });
+    const isConvTx = (tx) => !!convByTxId[tx.id] || (tx.description || "").startsWith("[CONVERSÃO REAL]");
+
+    // Separa: lançamentos normais (agrupados por organização) x conversões seguras (grupo próprio)
+    const regularTxs = filteredTxs.filter(tx => !isConvTx(tx));
+    const conversionTxs = filteredTxs.filter(tx => isConvTx(tx));
+
+    function appendGroupHeader(iconClass, title, countText, totalAmount, totalNet, extraClass) {
+        const headerRow = document.createElement("tr");
+        headerRow.className = "ledger-group-header" + (extraClass ? " " + extraClass : "");
+        headerRow.innerHTML = `
+            <td colspan="10">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <span><i class="fa-solid ${iconClass}"></i> ${title}<span class="ledger-group-count">${countText}</span></span>
+                    <span class="ledger-group-totals">Movimentado: <strong>${formatCurrency(totalAmount)}</strong> &nbsp;·&nbsp; Líquido: <strong class="text-success">${formatCurrency(totalNet)}</strong></span>
+                </div>
+            </td>
+        `;
+        tableBody.appendChild(headerRow);
+    }
+
+    // 1) Lançamentos normais agrupados por ORGANIZAÇÃO
+    const groups = {};
+    regularTxs.forEach(tx => {
+        const scheme = state.schemes.find(s => s.id === tx.schemeId);
+        const org = scheme ? (scheme.organization || "Geral") : "Sem Organização (canal removido)";
+        if (!groups[org]) groups[org] = [];
+        groups[org].push(tx);
+    });
+    const orgNames = Object.keys(groups).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    orgNames.forEach(org => {
+        const txs = groups[org].sort((a, b) => new Date(b.date) - new Date(a.date));
+        const totalAmount = txs.reduce((s, t) => s + (t.amount || 0), 0);
+        const totalNet = txs.reduce((s, t) => s + (t.netAmount || 0), 0);
+        appendGroupHeader("fa-building-columns", org, `${txs.length} ${txs.length !== 1 ? 'lançamentos' : 'lançamento'}`, totalAmount, totalNet);
+        txs.forEach(tx => tableBody.appendChild(buildLedgerRow(tx)));
+    });
+
+    // 2) Conversões Seguras — grupo separado; cada OPERAÇÃO numa linha expansível
+    if (conversionTxs.length > 0) {
+        // Agrupa as transações por operação (conversão). Soltas (sem operação) vão à parte.
+        const ops = {};
+        const loose = [];
+        conversionTxs.forEach(tx => {
+            const info = convByTxId[tx.id];
+            if (info && info.conv) {
+                const cid = info.conv.id;
+                if (!ops[cid]) ops[cid] = { conv: info.conv, source: info.source, dest: info.dest, txs: [] };
+                ops[cid].txs.push(tx);
+            } else {
+                loose.push(tx);
+            }
+        });
+
+        const opList = Object.values(ops).sort((a, b) => {
+            const da = Math.max.apply(null, a.txs.map(t => new Date(t.date).getTime()));
+            const db = Math.max.apply(null, b.txs.map(t => new Date(t.date).getTime()));
+            return db - da;
+        });
+
+        const totalAmountAll = conversionTxs.reduce((s, t) => s + (t.amount || 0), 0);
+        const totalNetAll = conversionTxs.reduce((s, t) => s + (t.netAmount || 0), 0);
+        const opCount = opList.length + loose.length;
+        appendGroupHeader("fa-shuffle", "Conversões Seguras", `${opCount} ${opCount !== 1 ? 'operações' : 'operação'}`, totalAmountAll, totalNetAll, "ledger-group-conversion");
+
+        opList.forEach(op => {
+            const txs = op.txs.sort((a, b) => new Date(b.date) - new Date(a.date));
+            const amt = txs.reduce((s, t) => s + (t.amount || 0), 0);
+            const cost = txs.reduce((s, t) => s + (t.cost || 0), 0);
+            const net = txs.reduce((s, t) => s + (t.netAmount || 0), 0);
+            const latestDate = txs[0] ? txs[0].date : "";
+            const sName = op.source ? op.source.name : "Origem";
+            const dName = op.dest ? op.dest.name : "Destino";
+            const opDesc = op.conv.description || "Operação de Conversão";
+            const cid = op.conv.id;
+
+            // Linha da operação — clicável para abrir o modal "Detalhes da Operação"
+            const parent = document.createElement("tr");
+            parent.className = "conv-parent";
+            parent.setAttribute("data-conv", cid);
+            parent.innerHTML = `
+                <td><i class="fa-solid fa-magnifying-glass-chart conv-detail-icon"></i> ${latestDate}</td>
+                <td>${buildFlowHtml(op.source, op.dest)}</td>
+                <td><span class="tx-step-badge tx-step-int">Conversão</span></td>
+                <td>${opDesc}<span class="conv-count">${txs.length} movimento${txs.length !== 1 ? 's' : ''}</span></td>
+                <td>${formatCurrency(amt)}</td>
+                <td class="text-warning">${formatCurrency(cost)}</td>
+                <td class="text-success">${formatCurrency(net)}</td>
+                <td class="text-muted">-</td>
+                <td><span class="tx-status-dot status-clean">Consolidado</span></td>
+                <td class="text-muted" title="Ver detalhes da operação"><i class="fa-solid fa-up-right-from-square" style="opacity:0.5;"></i></td>
+            `;
+            parent.addEventListener("click", () => {
+                if (window.openMonitorDetails) window.openMonitorDetails(cid);
+            });
+            tableBody.appendChild(parent);
+        });
+
+        // Transações de conversão sem operação identificada — exibidas soltas
+        loose.sort((a, b) => new Date(b.date) - new Date(a.date))
+             .forEach(tx => tableBody.appendChild(buildLedgerRow(tx, convByTxId[tx.id])));
+    }
 }
 
 // ----------------------------------------------------
@@ -2023,8 +2278,8 @@ if (formLegalScheme) {
 }
 
 // Deletar Esquema
-window.deleteScheme = function(id) {
-    if (confirm("Tem certeza que deseja desativar este canal de fluxo? Transações vinculadas continuarão no histórico.")) {
+window.deleteScheme = async function(id) {
+    if (await appConfirm("Tem certeza que deseja desativar este canal de fluxo? Transações vinculadas continuarão no histórico.", { danger: true, okText: "Desativar" })) {
         state.schemes = state.schemes.filter(s => s.id !== id);
         saveState();
         renderSchemes();
@@ -2136,6 +2391,53 @@ if (formEditScheme) {
     });
 }
 
+// Preview do cálculo de taxa do Lançamento Direto
+window.updateTxPreview = function() {
+    const amountEl = document.getElementById("tx-amount");
+    if (!amountEl) return;
+    const taxEl = document.getElementById("tx-tax");
+    const enabledEl = document.getElementById("tx-tax-enabled");
+
+    const amount = parseMoneyValue("tx-amount") || 0;
+    const enabled = !enabledEl || enabledEl.checked;
+    const taxPct = enabled ? (parseFloat(taxEl && taxEl.value) || 0) : 0;
+    const cost = amount * (taxPct / 100);
+    const net = amount - cost;
+
+    const bruto = document.getElementById("tx-preview-bruto");
+    const taxaRow = document.getElementById("tx-preview-taxa-row");
+    const taxaPct = document.getElementById("tx-preview-taxa-pct");
+    const taxa = document.getElementById("tx-preview-taxa");
+    const liquido = document.getElementById("tx-preview-liquido");
+
+    if (bruto) bruto.textContent = formatCurrency(amount);
+    if (taxaPct) taxaPct.textContent = String(taxPct).replace(".", ",");
+    if (taxa) taxa.textContent = "- " + formatCurrency(cost);
+    if (liquido) liquido.textContent = formatCurrency(net);
+    if (taxaRow) taxaRow.style.opacity = enabled ? "1" : "0.4";
+};
+
+// Liga/desliga o campo de taxa conforme o toggle "Aplicar"
+window.toggleTxTax = function() {
+    const taxEl = document.getElementById("tx-tax");
+    const enabledEl = document.getElementById("tx-tax-enabled");
+    if (!taxEl || !enabledEl) return;
+    // Campo desabilitado não entra na validação "required" do form
+    taxEl.disabled = !enabledEl.checked;
+    taxEl.style.opacity = enabledEl.checked ? "1" : "0.4";
+    window.updateTxPreview();
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+    const amountEl = document.getElementById("tx-amount");
+    const taxEl = document.getElementById("tx-tax");
+    const enabledEl = document.getElementById("tx-tax-enabled");
+    if (amountEl) amountEl.addEventListener("input", window.updateTxPreview);
+    if (taxEl) taxEl.addEventListener("input", window.updateTxPreview);
+    if (enabledEl) enabledEl.addEventListener("change", window.toggleTxTax);
+    window.updateTxPreview();
+});
+
 // Registrar nova Transação
 const formTx = document.getElementById("form-transaction");
 if (formTx) {
@@ -2155,9 +2457,15 @@ if (formTx) {
             return;
         }
 
-        // Calcula taxas e valores líquidos (utilizando o input de taxa editável na tela)
+        // Calcula taxas e valores líquidos (respeitando o toggle "Aplicar taxa")
         const txTaxInput = document.getElementById("tx-tax");
-        const appliedTax = (txTaxInput && txTaxInput.value !== "") ? parseFloat(txTaxInput.value) : scheme.tax;
+        const txTaxEnabled = document.getElementById("tx-tax-enabled");
+        let appliedTax;
+        if (txTaxEnabled && !txTaxEnabled.checked) {
+            appliedTax = 0; // taxa desativada pelo usuário
+        } else {
+            appliedTax = (txTaxInput && txTaxInput.value !== "") ? parseFloat(txTaxInput.value) : scheme.tax;
+        }
         const cost = amount * (appliedTax / 100);
         const netAmount = amount - cost;
 
@@ -2200,7 +2508,10 @@ if (formTx) {
             netAmount,
             stockItemId: stockMovements.length > 0 ? stockMovements[0].itemId : "",
             stockQty: stockMovements.length > 0 ? stockMovements[0].qty : null,
-            stockMovements: stockMovements
+            stockMovements: stockMovements,
+            observation: (document.getElementById("tx-obs") ? document.getElementById("tx-obs").value.trim() : ""),
+            createdBy: currentTxUser(),
+            createdAt: new Date().toISOString()
         };
 
         // Encadeamento do hash do ledger imutável (simulação de blockchain/corrente)
@@ -2221,13 +2532,14 @@ if (formTx) {
         }
         
         // Reabilita todas as opções de etapa e status após o reset do form
-        const txTypeSelect = document.getElementById("tx-type");
-        const txStatusSelect = document.getElementById("tx-status");
-        if (txTypeSelect) {
-            Array.from(txTypeSelect.options).forEach(opt => opt.disabled = false);
+        // Restaura as opções completas e os valores padrão dos seletores pesquisáveis
+        if (searchableTxType) {
+            searchableTxType.updateOptions(TX_TYPE_OPTIONS);
+            searchableTxType.setValue("Depósito");
         }
-        if (txStatusSelect) {
-            Array.from(txStatusSelect.options).forEach(opt => opt.disabled = false);
+        if (searchableTxStatus) {
+            searchableTxStatus.updateOptions(TX_STATUS_OPTIONS);
+            searchableTxStatus.setValue("Processando");
         }
 
         setTodayDate();
@@ -2248,6 +2560,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const txStockMovementsSection = document.getElementById("tx-stock-movements-section");
     const txStockMovementsContainer = document.getElementById("tx-stock-movements-container");
     const btnAddStockMovement = document.getElementById("btn-add-stock-movement");
+
+    // Retorna os itens que devem aparecer no dropdown de movimentação,
+    // respeitando o filtro "Mostrar apenas produtos finais".
+    function getStockDropdownItems(scheme) {
+        const items = (scheme && scheme.items) || [];
+        const onlyProducts = document.getElementById("tx-stock-products-only");
+        if (onlyProducts && onlyProducts.checked) {
+            return items.filter(i => i.type === "produto");
+        }
+        return items;
+    }
 
     function addStockMovementRow(selectedItemId = "", qtyVal = "") {
         if (!txStockMovementsContainer) return;
@@ -2299,8 +2622,8 @@ document.addEventListener("DOMContentLoaded", () => {
         // Popula as opções do dropdown
         function populateOptions(filterText = "") {
             optionsContainer.innerHTML = "";
-            const items = selectedScheme.items || [];
-            const filteredItems = items.filter(item => 
+            const items = getStockDropdownItems(selectedScheme);
+            const filteredItems = items.filter(item =>
                 item.name.toLowerCase().includes(filterText.toLowerCase())
             );
 
@@ -2444,6 +2767,18 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Filtro "apenas produtos finais": fecha dropdowns abertos para reabrirem já filtrados
+    const stockProductsOnly = document.getElementById("tx-stock-products-only");
+    if (stockProductsOnly) {
+        stockProductsOnly.addEventListener("change", () => {
+            document.querySelectorAll("#tx-stock-movements-container .searchable-select-container.open").forEach(c => {
+                c.classList.remove("open");
+                const d = c.querySelector(".searchable-select-dropdown");
+                if (d) d.classList.add("hidden");
+            });
+        });
+    }
+
     if (txSchemeSelect && txStockMovementsSection && txStockMovementsContainer) {
         txSchemeSelect.addEventListener("change", () => {
             const selectedSchemeId = txSchemeSelect.value;
@@ -2453,37 +2788,26 @@ document.addEventListener("DOMContentLoaded", () => {
             if (txTaxInput) {
                 txTaxInput.value = selectedScheme ? selectedScheme.tax : "";
             }
-            
-            const txTypeSelect = document.getElementById("tx-type");
-            const txStatusSelect = document.getElementById("tx-status");
+            if (window.updateTxPreview) window.updateTxPreview();
+
             const isLegal = selectedScheme && selectedScheme.type === "legal";
 
             if (isLegal) {
-                // Se for legal, força Integração e Limpo
-                if (txTypeSelect) {
-                    txTypeSelect.value = "Integração";
-                    Array.from(txTypeSelect.options).forEach(opt => {
-                        opt.disabled = opt.value !== "Integração";
-                    });
+                // Cliente legítimo: etapas de comércio real + Integração; status sempre Consolidado
+                if (searchableTxType) {
+                    searchableTxType.updateOptions(TX_TYPE_OPTIONS_LEGAL);
+                    if (["Depósito", "Estratificação"].includes(searchableTxType.getValue())) {
+                        searchableTxType.setValue("Integração");
+                    }
                 }
-                if (txStatusSelect) {
-                    txStatusSelect.value = "Limpo";
-                    Array.from(txStatusSelect.options).forEach(opt => {
-                        opt.disabled = opt.value !== "Limpo";
-                    });
+                if (searchableTxStatus) {
+                    searchableTxStatus.updateOptions(TX_STATUS_OPTIONS_LEGAL);
+                    searchableTxStatus.setValue("Limpo");
                 }
             } else {
-                // Caso contrário (fachada), reabilita as opções
-                if (txTypeSelect) {
-                    Array.from(txTypeSelect.options).forEach(opt => {
-                        opt.disabled = false;
-                    });
-                }
-                if (txStatusSelect) {
-                    Array.from(txStatusSelect.options).forEach(opt => {
-                        opt.disabled = false;
-                    });
-                }
+                // Fachada: todas as etapas e status disponíveis
+                if (searchableTxType) searchableTxType.updateOptions(TX_TYPE_OPTIONS);
+                if (searchableTxStatus) searchableTxStatus.updateOptions(TX_STATUS_OPTIONS);
             }
 
             if (selectedScheme && selectedScheme.hasStock) {
@@ -2512,8 +2836,8 @@ document.addEventListener("DOMContentLoaded", () => {
                             function populateOptions(filterText = "") {
                                 if (!optionsContainer) return;
                                 optionsContainer.innerHTML = "";
-                                const items = selectedScheme.items || [];
-                                const filteredItems = items.filter(item => 
+                                const items = getStockDropdownItems(selectedScheme);
+                                const filteredItems = items.filter(item =>
                                     item.name.toLowerCase().includes(filterText.toLowerCase())
                                 );
 
@@ -2619,6 +2943,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 itemQtyGroup.classList.add("hidden");
                 itemValueGroup.classList.remove("hidden");
                 itemRecipeGroup.classList.remove("hidden");
+                window.renderNewProductRecipeInputs();
             } else {
                 itemQtyGroup.classList.remove("hidden");
                 itemValueGroup.classList.add("hidden");
@@ -2659,8 +2984,8 @@ if (btnExport) {
 
 const btnClear = document.getElementById("btn-clear-ledger");
 if (btnClear) {
-    btnClear.addEventListener("click", () => {
-        if (confirm("ATENÇÃO: Isso apagará permanentemente todos os registros do livro-razão e esquemas personalizados, restaurando os dados iniciais de simulação. Confirma?")) {
+    btnClear.addEventListener("click", async () => {
+        if (await appConfirm("ATENÇÃO: Isso apagará permanentemente todos os registros do livro-razão e esquemas personalizados, restaurando os dados iniciais de simulação. Confirma?", { danger: true, okText: "Apagar tudo" })) {
             localStorage.removeItem("laundrflow_schemes");
             localStorage.removeItem("laundrflow_transactions");
             window.location.reload();
@@ -2669,13 +2994,49 @@ if (btnClear) {
 }
 
 // Filtros em tempo real no ledger
-const ledgerSearch = document.getElementById("ledger-search");
-const ledgerFilterScheme = document.getElementById("ledger-filter-scheme");
-const ledgerFilterType = document.getElementById("ledger-filter-type");
+// Filtros do Livro-Razão (seletores pesquisáveis)
+let searchableLedgerScheme = null;
+let searchableLedgerType = null;
 
+function refreshLedgerSchemeFilter() {
+    if (!searchableLedgerScheme) return;
+    const opts = [{ value: "all", label: "Todos os Esquemas" }].concat(
+        scopedSchemes().map(s => ({ value: s.id, label: `${s.name} (${s.organization || 'Geral'})` }))
+    );
+    const cur = searchableLedgerScheme.getValue();
+    searchableLedgerScheme.updateOptions(opts);
+    if (!opts.some(o => o.value === cur)) searchableLedgerScheme.setValue("all");
+}
+
+function initLedgerFilters() {
+    const schemeC = document.getElementById("ledger-filter-scheme-container");
+    const typeC = document.getElementById("ledger-filter-type-container");
+    if (schemeC && !searchableLedgerScheme) {
+        searchableLedgerScheme = initSearchableSelect(schemeC, [{ value: "all", label: "Todos os Esquemas" }], {
+            inputId: "ledger-filter-scheme", placeholder: "Todos os Esquemas", initialValue: "all",
+            required: false, onSelect: () => renderLedger()
+        });
+    }
+    if (typeC && !searchableLedgerType) {
+        const typeOpts = [
+            { value: "all", label: "Todas as Etapas" },
+            { value: "Depósito", label: "Depósito" },
+            { value: "Estratificação", label: "Estratificação" },
+            { value: "Integração", label: "Integração" },
+            { value: "Venda", label: "Venda de Mercadorias/Insumos" },
+            { value: "Compra", label: "Compra de Mercadorias/Insumos" }
+        ];
+        searchableLedgerType = initSearchableSelect(typeC, typeOpts, {
+            inputId: "ledger-filter-type", placeholder: "Todas as Etapas", initialValue: "all",
+            required: false, onSelect: () => renderLedger()
+        });
+    }
+    refreshLedgerSchemeFilter();
+}
+
+const ledgerSearch = document.getElementById("ledger-search");
 if (ledgerSearch) ledgerSearch.addEventListener("input", renderLedger);
-if (ledgerFilterScheme) ledgerFilterScheme.addEventListener("change", renderLedger);
-if (ledgerFilterType) ledgerFilterType.addEventListener("change", renderLedger);
+document.addEventListener("DOMContentLoaded", initLedgerFilters);
 
 // ----------------------------------------------------
 // 6. INICIALIZAÇÃO DO APP NA CARGA DA PÁGINA
@@ -2731,7 +3092,7 @@ function populateConversionSelects() {
     if (!sourceOrgContainer || !sourceContainer || !destOrgContainer || !destContainer) return;
 
     // 1. Popula Clientes de Origem (Fachada)
-    const fachadaSchemes = state.schemes.filter(s => s.type === "fachada" || !s.type);
+    const fachadaSchemes = scopedSchemes().filter(s => s.type === "fachada" || !s.type);
     const sourceOrgs = [...new Set(fachadaSchemes.map(s => s.organization || "Geral"))];
     const sourceOrgOptions = sourceOrgs.map(org => ({ value: org, label: org.toUpperCase() }));
 
@@ -2781,7 +3142,7 @@ function populateConversionSelects() {
     }
 
     // 2. Popula Clientes de Destino (Legítimo)
-    const legalSchemes = state.schemes.filter(s => s.type === "legal");
+    const legalSchemes = scopedSchemes().filter(s => s.type === "legal");
     const destOrgs = [...new Set(legalSchemes.map(s => s.organization || "Geral"))];
     const destOrgOptions = destOrgs.map(org => ({ value: org, label: org.toUpperCase() }));
 
@@ -2977,6 +3338,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const startDateStr = document.getElementById("conv-start-date").value;
             const endDateStr = document.getElementById("conv-end-date").value;
             const description = document.getElementById("conv-desc").value;
+            const observation = document.getElementById("conv-obs") ? document.getElementById("conv-obs").value.trim() : "";
 
             const sourceScheme = state.schemes.find(s => s.id === sourceId);
             const destScheme = state.schemes.find(s => s.id === destId);
@@ -3040,6 +3402,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 endDate: endDateStr,
                 durationDays: durationDays,
                 description: description || "Fornecimento de Suprimentos",
+                observation: observation,
                 createdAt: new Date().toISOString(),
                 days: days
             };
@@ -3117,7 +3480,7 @@ window.openMoveOrgModal = function(schemeId, event) {
     }
 
     // Filtra organizações das mesmas categorias de esquema
-    const orgs = [...new Set(state.schemes.map(s => s.organization || "Geral"))];
+    const orgs = [...new Set(scopedSchemes().map(s => s.organization || "Geral"))];
     const orgOptions = orgs.map(org => ({ value: org, label: org.toUpperCase() }));
 
     const container = document.getElementById("move-org-select-container");
@@ -3181,8 +3544,159 @@ function initCategorySelects() {
 // Executa a inicialização de categorias comerciais ao carregar a página
 document.addEventListener("DOMContentLoaded", initCategorySelects);
 
+// Renderiza os lançamentos diretos que ainda estão em processamento (não consolidados)
+window.renderProcessingLaunches = function() {
+    const list = document.getElementById("processing-launches-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    // Lançamentos diretos aguardando: status "Processando" ou "Pendente"
+    const pending = scopedTransactions().filter(t => t.status === "Processando" || t.status === "Pendente");
+
+    if (pending.length === 0) {
+        list.innerHTML = '<div style="grid-column: span 3; text-align: center; padding: 30px; color: var(--text-muted); font-size: 12px;"><i class="fa-solid fa-circle-check"></i> Nenhum lançamento em processamento.</div>';
+        return;
+    }
+
+    // Etapas legíveis
+    const etapaLabels = {
+        "Depósito": "1. Depósito",
+        "Estratificação": "2. Estratificação",
+        "Integração": "3. Integração"
+    };
+
+    pending.forEach(tx => {
+        const scheme = state.schemes.find(s => s.id === tx.schemeId);
+        const schemeName = scheme ? scheme.name : "Canal Inativo";
+        const org = scheme ? (scheme.organization || "Geral") : "Geral";
+        const statusLabel = tx.status === "Processando" ? "Em Processamento" : "Aguardando Envio";
+        const statusClass = tx.status === "Processando" ? "active" : "pending";
+        const etapa = etapaLabels[tx.type] || tx.type || "—";
+        const formattedDate = tx.date ? tx.date.split('-').reverse().join('/') : "—";
+
+        const card = document.createElement("div");
+        card.className = "conversion-card";
+        card.innerHTML = `
+            <div class="conversion-card-header">
+                <div>
+                    <div class="conversion-card-title">${tx.description || 'Lançamento Direto'}</div>
+                    <div class="conversion-card-subtitle">${etapa} · ${formattedDate}</div>
+                </div>
+                <span class="conversion-badge ${statusClass}">${statusLabel}</span>
+            </div>
+
+            <div class="conversion-flow-path">
+                <div class="conversion-flow-node">
+                    <span class="node-org">${org}</span>
+                    <span class="node-name" title="${schemeName}">${schemeName.length > 24 ? schemeName.substring(0, 22) + '...' : schemeName}</span>
+                </div>
+            </div>
+
+            <div class="conversion-details-grid">
+                <div class="conversion-detail-item">
+                    <span class="conversion-detail-label">Valor</span>
+                    <span class="conversion-detail-value">${formatCurrency(tx.amount || 0)}</span>
+                </div>
+                <div class="conversion-detail-item" style="text-align: right;">
+                    <span class="conversion-detail-label">Líquido</span>
+                    <span class="conversion-detail-value" style="color: var(--primary);">${formatCurrency(tx.netAmount || 0)}</span>
+                </div>
+            </div>
+
+            <button class="btn-day-check" data-conclude="${tx.id}" style="width: 100%; justify-content: center; margin-top: 12px;">
+                <i class="fa-solid fa-check"></i> Marcar como Concluído
+            </button>
+        `;
+        list.appendChild(card);
+    });
+
+    // Liga os botões de conclusão
+    list.querySelectorAll("[data-conclude]").forEach(btn => {
+        btn.addEventListener("click", () => window.concludeLaunch(btn.getAttribute("data-conclude")));
+    });
+};
+
+// Renderiza o histórico dos lançamentos diretos que foram concluídos (só visualização)
+window.renderProcessedLaunches = function() {
+    const list = document.getElementById("processed-launches-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    // Somente lançamentos que passaram pelo processamento e foram concluídos
+    const done = scopedTransactions().filter(t => t.concludedAt);
+    done.sort((a, b) => String(b.concludedAt).localeCompare(String(a.concludedAt)));
+
+    if (done.length === 0) {
+        list.innerHTML = '<div style="grid-column: span 3; text-align: center; padding: 30px; color: var(--text-muted); font-size: 12px;"><i class="fa-solid fa-clock-rotate-left"></i> Nenhum lançamento concluído ainda.</div>';
+        return;
+    }
+
+    const etapaLabels = {
+        "Depósito": "1. Depósito",
+        "Estratificação": "2. Estratificação",
+        "Integração": "3. Integração"
+    };
+
+    done.forEach(tx => {
+        const scheme = state.schemes.find(s => s.id === tx.schemeId);
+        const schemeName = scheme ? scheme.name : "Canal Inativo";
+        const org = scheme ? (scheme.organization || "Geral") : "Geral";
+        const etapa = etapaLabels[tx.type] || tx.type || "—";
+        let concludedLabel = "—";
+        try { concludedLabel = new Date(tx.concludedAt).toLocaleDateString("pt-BR"); } catch (_) {}
+
+        const card = document.createElement("div");
+        card.className = "conversion-card";
+        card.innerHTML = `
+            <div class="conversion-card-header">
+                <div>
+                    <div class="conversion-card-title">${tx.description || 'Lançamento Direto'}</div>
+                    <div class="conversion-card-subtitle">${etapa} · Concluído em ${concludedLabel}</div>
+                </div>
+                <span class="conversion-badge completed">Concluído</span>
+            </div>
+
+            <div class="conversion-flow-path">
+                <div class="conversion-flow-node">
+                    <span class="node-org">${org}</span>
+                    <span class="node-name" title="${schemeName}">${schemeName.length > 24 ? schemeName.substring(0, 22) + '...' : schemeName}</span>
+                </div>
+            </div>
+
+            <div class="conversion-details-grid">
+                <div class="conversion-detail-item">
+                    <span class="conversion-detail-label">Valor</span>
+                    <span class="conversion-detail-value">${formatCurrency(tx.amount || 0)}</span>
+                </div>
+                <div class="conversion-detail-item" style="text-align: right;">
+                    <span class="conversion-detail-label">Líquido</span>
+                    <span class="conversion-detail-value" style="color: var(--color-success);">${formatCurrency(tx.netAmount || 0)}</span>
+                </div>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+};
+
+// Marca um lançamento direto como concluído (Consolidado / Limpo)
+window.concludeLaunch = function(txId) {
+    const tx = (state.transactions || []).find(t => t.id === txId);
+    if (!tx) return;
+    tx.status = "Limpo";
+    tx.concludedAt = new Date().toISOString(); // registra a conclusão para o histórico
+    saveState();
+    renderProcessingLaunches();
+    if (window.renderProcessedLaunches) window.renderProcessedLaunches();
+    if (typeof renderLedger === "function") renderLedger();
+    if (typeof updateDashboard === "function") updateDashboard();
+};
+
 // Renderiza os processos de conversão/lavagem ativos e concluídos
 window.renderConversions = function() {
+    // Sempre atualiza os painéis de lançamentos diretos (em processamento + histórico)
+    window.renderProcessingLaunches();
+    if (window.renderProcessedLaunches) window.renderProcessedLaunches();
+
     const activeList = document.getElementById("active-conversions-list");
     const completedList = document.getElementById("completed-conversions-list");
 
@@ -3191,7 +3705,7 @@ window.renderConversions = function() {
     activeList.innerHTML = "";
     completedList.innerHTML = "";
 
-    const conversions = state.conversions || [];
+    const conversions = scopedConversions();
 
     if (conversions.length === 0) {
         const emptyMsg = '<div style="grid-column: span 3; text-align: center; padding: 30px; color: var(--text-muted); font-size: 13px;">Nenhuma operação de lavagem registrada.</div>';
@@ -3256,8 +3770,14 @@ window.renderConversions = function() {
 
         const progressText = progressPct === 100 ? "Finalizado" : `Dia ${checkedDays} de ${totalDays}`;
 
+        // Indicador: algum dia foi enviado abaixo do planejado (valor faltante pendente)?
+        const hasShortfall = (conv.days || []).some(d => d.checked && (((d.plannedAmount || 0) - (d.actualAmount || 0)) > 0.01));
+        const shortfallBadge = hasShortfall
+            ? `<span class="conversion-badge shortfall" title="Há dia(s) enviado(s) abaixo do planejado"><i class="fa-solid fa-triangle-exclamation"></i> Faltante</span>`
+            : "";
+
         const card = document.createElement("div");
-        card.className = "conversion-card";
+        card.className = "conversion-card" + (hasShortfall ? " has-shortfall" : "");
         card.addEventListener("click", () => window.openMonitorDetails(conv.id));
 
         const formattedStart = conv.startDate.split('-').reverse().join('/');
@@ -3269,7 +3789,10 @@ window.renderConversions = function() {
                     <div class="conversion-card-title">${conv.description || 'Operação de Lavagem'}</div>
                     <div class="conversion-card-subtitle">Criado em: ${new Date(conv.createdAt).toLocaleDateString('pt-BR')}</div>
                 </div>
-                <span class="conversion-badge ${status}">${statusLabel}</span>
+                <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+                    <span class="conversion-badge ${status}">${statusLabel}</span>
+                    ${shortfallBadge}
+                </div>
             </div>
             
             <div class="conversion-flow-path">
@@ -3371,6 +3894,18 @@ window.openMonitorDetails = function(convId) {
     const destName = destScheme ? destScheme.name : "Canal Inativo";
 
     document.getElementById("monitor-details-desc").textContent = conv.description || "Operação de Lavagem";
+
+    // Observação da operação (opcional)
+    const obsWrapper = document.getElementById("monitor-details-obs-wrapper");
+    const obsSpan = document.getElementById("monitor-details-obs");
+    if (obsWrapper && obsSpan) {
+        if (conv.observation) {
+            obsSpan.textContent = conv.observation;
+            obsWrapper.style.display = "block";
+        } else {
+            obsWrapper.style.display = "none";
+        }
+    }
     
     // Status badge
     const totalDays = conv.days ? conv.days.length : conv.durationDays;
@@ -3426,6 +3961,28 @@ window.openMonitorDetails = function(convId) {
 
             const formattedDate = day.date.split('-').reverse().join('/');
 
+            // Diferença entre o planejado e o que foi realmente enviado
+            const planned = day.plannedAmount || 0;
+            const shortfall = day.checked ? (planned - (day.actualAmount || 0)) : 0;
+
+            let shortfallHtml = "";
+            if (shortfall > 0.01) {
+                shortfallHtml = `
+                    <div class="monitor-day-shortfall">
+                        <span><i class="fa-solid fa-triangle-exclamation"></i> Faltam ${formatCurrency(shortfall)} do planejado (${formatCurrency(planned)})</span>
+                        <button class="btn-day-missing" onclick="window.sendMissingConversionDay('${conv.id}', ${index})">
+                            <i class="fa-solid fa-rotate-right"></i> Enviar faltante
+                        </button>
+                    </div>
+                `;
+            } else if (day.compensated) {
+                shortfallHtml = `
+                    <div class="monitor-day-shortfall compensated">
+                        <span><i class="fa-solid fa-circle-check"></i> Valor faltante compensado — bate com o planejado</span>
+                    </div>
+                `;
+            }
+
             row.innerHTML = `
                 <div class="monitor-day-info">
                     <span class="monitor-day-title">Dia ${day.index} - Diluição</span>
@@ -3434,9 +3991,9 @@ window.openMonitorDetails = function(convId) {
                 <div class="monitor-day-actions">
                     <div class="monitor-day-input-wrapper">
                         <span class="monitor-day-input-prefix">R$</span>
-                        <input type="text" class="monitor-day-input" 
-                            id="input-day-val-${conv.id}-${index}" 
-                            value="${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(day.actualAmount)}" 
+                        <input type="text" class="monitor-day-input"
+                            id="input-day-val-${conv.id}-${index}"
+                            value="${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(day.actualAmount)}"
                             oninput="window.maskMoney(this)"
                             ${day.checked ? 'disabled' : ''}>
                     </div>
@@ -3450,6 +4007,7 @@ window.openMonitorDetails = function(convId) {
                         </button>
                     `}
                 </div>
+                ${shortfallHtml}
             `;
             daysList.appendChild(row);
         });
@@ -3463,6 +4021,65 @@ window.closeMonitorDetails = function() {
     const modal = document.getElementById("modal-monitor-details");
     if (modal) modal.style.display = "none";
 };
+
+// Cria o par de lançamentos (origem/destino) de uma injeção de conversão e retorna [idOrig, idDest]
+function pushConversionTxPair(conv, day, dayIndex, amount, kindLabel, idSuffix) {
+    // Funciona mesmo com canais inativos/removidos: usa os ids e taxas salvos na operação.
+    const sourceScheme = state.schemes.find(s => s.id === conv.sourceSchemeId);
+    const destScheme = state.schemes.find(s => s.id === conv.destSchemeId);
+    const sourceName = sourceScheme ? sourceScheme.name : "Canal Inativo";
+    const destName = destScheme ? destScheme.name : "Canal Inativo";
+
+    let lastHash = getLatestHash();
+    const periodLabel = `[Dia ${day.index}/${conv.days.length} - ${kindLabel} em: ${new Date().toLocaleDateString('pt-BR')}]`;
+    const txUser = currentTxUser();
+    const txTime = new Date().toISOString();
+
+    // 1. Débito de Integração na Fachada (Origem)
+    const costOrig = amount * (conv.taxSource / 100);
+    const netOrig = amount - costOrig;
+    const txOrig = {
+        id: `tx-${Date.now()}-${dayIndex}${idSuffix}-a`,
+        schemeId: conv.sourceSchemeId,
+        amount: amount,
+        date: day.date,
+        type: "Integração",
+        status: "Limpo",
+        description: `[CONVERSÃO REAL] ${periodLabel} Lucros para ${destName} - ${conv.description}`,
+        cost: costOrig,
+        netAmount: netOrig,
+        stockItemId: "",
+        stockQty: null,
+        createdBy: txUser,
+        createdAt: txTime
+    };
+    txOrig.hash = generateHash(txOrig, lastHash);
+    state.transactions.push(txOrig);
+    lastHash = txOrig.hash;
+
+    // 2. Crédito de Faturamento no Canal Legítimo (Destino)
+    const costDest = netOrig * (conv.taxDest / 100);
+    const netDest = netOrig - costDest;
+    const txDest = {
+        id: `tx-${Date.now()}-${dayIndex}${idSuffix}-b`,
+        schemeId: conv.destSchemeId,
+        amount: netOrig,
+        date: day.date,
+        type: "Integração",
+        status: "Limpo",
+        description: `[CONVERSÃO REAL] ${periodLabel} Aporte de Capital de ${sourceName} - ${conv.description}`,
+        cost: costDest,
+        netAmount: netDest,
+        stockItemId: "",
+        stockQty: null,
+        createdBy: txUser,
+        createdAt: txTime
+    };
+    txDest.hash = generateHash(txDest, lastHash);
+    state.transactions.push(txDest);
+
+    return [txOrig.id, txDest.id];
+}
 
 window.confirmConversionDay = function(convId, dayIndex) {
     const conv = state.conversions.find(c => c.id === convId);
@@ -3480,76 +4097,45 @@ window.confirmConversionDay = function(convId, dayIndex) {
         return;
     }
 
-    const sourceScheme = state.schemes.find(s => s.id === conv.sourceSchemeId);
-    const destScheme = state.schemes.find(s => s.id === conv.destSchemeId);
-
-    if (!sourceScheme || !destScheme) {
-        alert("Erro: Canais de origem ou destino inativos.");
-        return;
-    }
-
-    // Marca como check
+    // Marca como check (funciona mesmo com canais inativos)
     day.actualAmount = actualAmount;
     day.checked = true;
 
-    // --- CRIAÇÃO DOS LANÇAMENTOS REAIS NO LIVRO-RAZÃO ---
-    let lastHash = getLatestHash();
+    // Gera os lançamentos reais no Livro-Razão
+    day.txIds = pushConversionTxPair(conv, day, dayIndex, actualAmount, "Confirmado", "") || [];
 
-    const periodLabel = `[Dia ${day.index}/${conv.days.length} - Confirmado em: ${new Date().toLocaleDateString('pt-BR')}]`;
-
-    // 1. Débito de Integração na Fachada (Origem)
-    const costOrig = actualAmount * (conv.taxSource / 100);
-    const netOrig = actualAmount - costOrig;
-
-    const txOrig = {
-        id: `tx-${Date.now()}-${dayIndex}-a`,
-        schemeId: conv.sourceSchemeId,
-        amount: actualAmount,
-        date: day.date,
-        type: "Integração",
-        status: "Limpo",
-        description: `[CONVERSÃO REAL] ${periodLabel} Lucros para ${destScheme.name} - ${conv.description}`,
-        cost: costOrig,
-        netAmount: netOrig,
-        stockItemId: "",
-        stockQty: null
-    };
-
-    txOrig.hash = generateHash(txOrig, lastHash);
-    state.transactions.push(txOrig);
-    lastHash = txOrig.hash;
-
-    // 2. Crédito de Faturamento no Canal Legítimo (Destino)
-    const costDest = netOrig * (conv.taxDest / 100);
-    const netDest = netOrig - costDest;
-
-    const txDest = {
-        id: `tx-${Date.now()}-${dayIndex}-b`,
-        schemeId: conv.destSchemeId,
-        amount: netOrig,
-        date: day.date,
-        type: "Integração",
-        status: "Limpo",
-        description: `[CONVERSÃO REAL] ${periodLabel} Aporte de Capital de ${sourceScheme.name} - ${conv.description}`,
-        cost: costDest,
-        netAmount: netDest,
-        stockItemId: "",
-        stockQty: null
-    };
-
-    txDest.hash = generateHash(txDest, lastHash);
-    state.transactions.push(txDest);
-
-    // Salva IDs no dia correspondente para referência
-    day.txIds = [txOrig.id, txDest.id];
-
-    // Salva o estado
     saveState();
-
-    // Notificação visual simples e atualização das telas
     updateDashboard();
     renderConversions();
     openMonitorDetails(convId); // Recarrega a modal para exibir o status atualizado
 
     alert(`Sucesso! Parcela do Dia ${day.index} confirmada no valor de R$ ${actualAmount.toLocaleString('pt-BR', {minimumFractionDigits: 2})}. Lançamentos gerados no Livro-Razão.`);
+};
+
+// Redundância: envia o valor FALTANTE de um dia que foi enviado abaixo do planejado
+window.sendMissingConversionDay = function(convId, dayIndex) {
+    const conv = state.conversions.find(c => c.id === convId);
+    if (!conv) return;
+
+    const day = conv.days[dayIndex];
+    if (!day || !day.checked) return;
+
+    const missing = (day.plannedAmount || 0) - (day.actualAmount || 0);
+    if (missing <= 0.01) return; // já bate com o planejado
+
+    // Funciona mesmo com canais inativos (usa ids/taxas salvos na operação)
+    const ids = pushConversionTxPair(conv, day, dayIndex, missing, "Compensação", "-comp");
+    if (!ids) return;
+
+    // Agora o dia bate com o planejado
+    day.actualAmount = day.plannedAmount;
+    day.compensated = true;
+    if (!Array.isArray(day.txIds)) day.txIds = [];
+    day.txIds.push(ids[0], ids[1]);
+
+    saveState();
+    // Refresh do modal primeiro (feedback visual garantido); demais telas de forma blindada
+    openMonitorDetails(convId);
+    try { updateDashboard(); } catch (e) {}
+    try { renderConversions(); } catch (e) {}
 };

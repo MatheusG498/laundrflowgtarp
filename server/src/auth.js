@@ -87,6 +87,7 @@ export function publicUser(user, role) {
     id: String(user._id),
     username: user.username,
     active: user.active !== false,
+    organization: user.organization || null, // null = "Todos" (vê todas as organizações)
     role: role
       ? {
           id: String(role._id),

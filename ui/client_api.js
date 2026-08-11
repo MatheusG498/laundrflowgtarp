@@ -17,8 +17,9 @@
     const USER_KEY = "laundrflow_user";
     const LAST_SYNC_KEY = "laundrflow_last_sync";
     const DIRTY_KEY = "laundrflow_pending_sync";
+    const REMEMBER_KEY = "laundrflow_remember";
     const HEARTBEAT_MS = 25000;
-    const DEFAULT_API = "http://localhost:8080";
+    const DEFAULT_API = "https://laundrflow-server.onrender.com";
 
     // -------------------- Estado em memória --------------------
     let currentUser = null;
@@ -277,6 +278,32 @@
         if (sessEl) sessEl.textContent = currentUser ? `${uname} (${rname})` : "—";
     }
 
+    // -------------------- Lembrar usuário e senha --------------------
+    // Guardado com leve ofuscação (base64) — NÃO é criptografia; a senha
+    // fica recuperável em texto por quem tiver acesso a esta máquina.
+    function b64encode(s) { return btoa(unescape(encodeURIComponent(s))); }
+    function b64decode(s) { return decodeURIComponent(escape(atob(s))); }
+
+    function saveRemember(username, password) {
+        try {
+            localStorage.setItem(REMEMBER_KEY, b64encode(JSON.stringify({ u: username, p: password })));
+        } catch (_) {}
+    }
+    function clearRemember() { localStorage.removeItem(REMEMBER_KEY); }
+    function getRemember() {
+        try {
+            const raw = localStorage.getItem(REMEMBER_KEY);
+            return raw ? JSON.parse(b64decode(raw)) : null;
+        } catch (_) { return null; }
+    }
+
+    function prefillRemembered() {
+        const rem = getRemember();
+        if ($("login-user")) $("login-user").value = rem ? (rem.u || "") : "";
+        if ($("login-pass")) $("login-pass").value = rem ? (rem.p || "") : "";
+        if ($("login-remember")) $("login-remember").checked = !!rem;
+    }
+
     // -------------------- Login / logout --------------------
     function showLogin(message, kind) {
         const ov = $("login-overlay");
@@ -285,6 +312,7 @@
         else hideStatus("login-status");
         const apiField = $("login-api-url");
         if (apiField) apiField.value = getApiUrl();
+        prefillRemembered();
     }
     function hideLogin() {
         const ov = $("login-overlay");
@@ -298,6 +326,10 @@
             setToken(res.token);
             currentUser = res.user;
             setCachedUser(res.user);
+            // Lembrar (ou esquecer) as credenciais conforme o checkbox
+            const remember = $("login-remember");
+            if (remember && remember.checked) saveRemember(username, password);
+            else clearRemember();
             await onAuthenticated(false);
             hideStatus("login-status");
         } catch (e) {
@@ -341,6 +373,43 @@
 
     // -------------------- Administração: cargos --------------------
     let rolesCache = [];
+    let searchableNewUserRole = null;
+    let searchableNewUserOrg = null;
+    let editingRoleId = null; // id do cargo sendo editado (null = criando novo)
+
+    // -------------------- Diálogos customizados (funcionam no Tauri, ao contrário de confirm/prompt) --------------------
+    function uiDialog(opts) {
+        return new Promise((resolve) => {
+            const prompt = !!opts.prompt;
+            const overlay = document.createElement("div");
+            overlay.className = "ui-dialog-overlay";
+            const inputHtml = prompt
+                ? `<input class="ui-dialog-input" type="${opts.password ? "password" : "text"}" placeholder="${opts.placeholder || ""}" autocomplete="off" spellcheck="false">`
+                : "";
+            overlay.innerHTML = `
+                <div class="ui-dialog glass-panel">
+                    <div class="ui-dialog-msg">${opts.message || ""}</div>
+                    ${inputHtml}
+                    <div class="ui-dialog-actions">
+                        <button class="btn btn-secondary ui-dialog-cancel">Cancelar</button>
+                        <button class="btn ${opts.danger ? "btn-danger" : "btn-primary"} ui-dialog-ok">${opts.okText || "Confirmar"}</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(overlay);
+            const input = overlay.querySelector(".ui-dialog-input");
+            if (input) setTimeout(() => input.focus(), 50);
+            const done = (val) => { overlay.remove(); resolve(val); };
+            overlay.querySelector(".ui-dialog-cancel").addEventListener("click", () => done(prompt ? null : false));
+            overlay.querySelector(".ui-dialog-ok").addEventListener("click", () => done(prompt ? (input ? input.value : "") : true));
+            overlay.addEventListener("click", (e) => { if (e.target === overlay) done(prompt ? null : false); });
+            if (input) input.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") overlay.querySelector(".ui-dialog-ok").click();
+                else if (e.key === "Escape") done(null);
+            });
+        });
+    }
+    const uiConfirm = (message, o = {}) => uiDialog({ message, danger: o.danger, okText: o.okText });
+    const uiPrompt = (message, o = {}) => uiDialog({ message, prompt: true, password: o.password, placeholder: o.placeholder });
 
     async function loadRoles() {
         try {
@@ -349,6 +418,7 @@
             sectionsCatalog = res.sections || [];
             renderRolePermCheckboxes();
             renderRoleUserSelect();
+            renderNewUserOrgSelect();
             renderRolesList();
         } catch (e) {
             if (e.status === 401) return forceReauth();
@@ -365,9 +435,37 @@
     }
 
     function renderRoleUserSelect() {
-        const sel = $("new-user-role");
-        if (!sel) return;
-        sel.innerHTML = rolesCache.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("");
+        const container = $("new-user-role-container");
+        if (!container || !window.initSearchableSelect) return;
+        const opts = rolesCache.map((r) => ({ value: r.id, label: r.name }));
+        const prev = searchableNewUserRole ? searchableNewUserRole.getValue() : "";
+        searchableNewUserRole = window.initSearchableSelect(container, opts, {
+            inputId: "new-user-role",
+            placeholder: "Selecione o cargo...",
+            required: false,
+            hideSearch: true,
+            initialValue: (prev && opts.some((o) => o.value === prev)) ? prev : (opts[0] ? opts[0].value : "")
+        });
+    }
+
+    // Lista de organizações (derivada dos clientes/esquemas) + "Todos"
+    function orgOptions() {
+        const set = new Set();
+        ((window.state && window.state.schemes) || []).forEach((s) => set.add(s.organization || "Geral"));
+        const opts = [{ value: "", label: "Todos (todas as organizações)" }];
+        [...set].sort((a, b) => a.localeCompare(b, "pt-BR")).forEach((o) => opts.push({ value: o, label: o }));
+        return opts;
+    }
+
+    function renderNewUserOrgSelect() {
+        const container = $("new-user-org-container");
+        if (!container || !window.initSearchableSelect) return;
+        searchableNewUserOrg = window.initSearchableSelect(container, orgOptions(), {
+            inputId: "new-user-org",
+            placeholder: "Todos (todas as organizações)",
+            required: false,
+            initialValue: ""
+        });
     }
 
     function renderRolesList() {
@@ -383,35 +481,84 @@
                 r.canEditData ? '<span class="mini-badge edit">Edita</span>' : '<span class="mini-badge">Leitura</span>',
                 r.system ? '<span class="mini-badge sys">Sistema</span>' : "",
             ].join("");
+            const edit = `<button class="mini-btn" data-edit-role="${r.id}" title="Editar"><i class="fa-solid fa-pen"></i></button>`;
             const del = r.system ? "" :
                 `<button class="mini-btn danger" data-del-role="${r.id}" title="Apagar"><i class="fa-solid fa-trash"></i></button>`;
-            return `<div class="admin-item">
+            return `<div class="admin-item${editingRoleId === r.id ? ' editing' : ''}">
                 <div class="admin-item-main">
                     <strong>${escapeHtml(r.name)}</strong> ${badges}
                     <div class="admin-item-sub">Telas: ${escapeHtml(perms)}</div>
                 </div>
-                <div class="admin-item-actions">${del}</div>
+                <div class="admin-item-actions">${edit}${del}</div>
             </div>`;
         }).join("") || '<div class="admin-empty">Nenhum cargo.</div>';
 
+        list.querySelectorAll("[data-edit-role]").forEach((btn) => {
+            btn.addEventListener("click", () => startEditRole(btn.getAttribute("data-edit-role")));
+        });
         list.querySelectorAll("[data-del-role]").forEach((btn) => {
             btn.addEventListener("click", () => deleteRole(btn.getAttribute("data-del-role")));
         });
     }
 
-    async function addRole() {
+    // Coloca o formulário de cargo em modo de edição, preenchido com o cargo escolhido
+    function startEditRole(id) {
+        const role = rolesCache.find((r) => r.id === id);
+        if (!role) return;
+        editingRoleId = id;
+        if ($("new-role-name")) $("new-role-name").value = role.name || "";
+        document.querySelectorAll("#new-role-perms input[type=checkbox]").forEach((c) => {
+            c.checked = (role.permissions || []).includes(c.value);
+        });
+        if ($("new-role-edit")) $("new-role-edit").checked = !!role.canEditData;
+        if ($("new-role-admin")) $("new-role-admin").checked = !!role.isAdmin;
+        const btn = $("btn-add-role");
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Salvar Alterações';
+        const cancel = $("btn-cancel-role");
+        if (cancel) cancel.style.display = "inline-flex";
+        showStatus("role-status", `Editando o cargo "${role.name}".`, "loading");
+        renderRolesList();
+        if ($("new-role-name")) $("new-role-name").scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function cancelEditRole() {
+        editingRoleId = null;
+        if ($("new-role-name")) $("new-role-name").value = "";
+        document.querySelectorAll("#new-role-perms input:checked").forEach((c) => (c.checked = false));
+        if ($("new-role-edit")) $("new-role-edit").checked = false;
+        if ($("new-role-admin")) $("new-role-admin").checked = false;
+        const btn = $("btn-add-role");
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i> Criar Cargo';
+        const cancel = $("btn-cancel-role");
+        if (cancel) cancel.style.display = "none";
+        hideStatus("role-status");
+        renderRolesList();
+    }
+
+    async function saveRole() {
         const name = ($("new-role-name") && $("new-role-name").value || "").trim();
         if (!name) return showStatus("role-status", "Informe o nome do cargo.", "error");
         const permissions = [...document.querySelectorAll("#new-role-perms input:checked")].map((c) => c.value);
         const canEditData = !!($("new-role-edit") && $("new-role-edit").checked);
         const adminFlag = !!($("new-role-admin") && $("new-role-admin").checked);
+        const body = { name, permissions, canEditData, isAdmin: adminFlag };
         try {
-            await api("/roles", { method: "POST", body: { name, permissions, canEditData, isAdmin: adminFlag } });
-            showStatus("role-status", "Cargo criado.", "success");
+            if (editingRoleId) {
+                await api("/roles/" + editingRoleId, { method: "PATCH", body });
+                showStatus("role-status", "Cargo atualizado.", "success");
+            } else {
+                await api("/roles", { method: "POST", body });
+                showStatus("role-status", "Cargo criado.", "success");
+            }
+            editingRoleId = null;
             if ($("new-role-name")) $("new-role-name").value = "";
             document.querySelectorAll("#new-role-perms input:checked").forEach((c) => (c.checked = false));
             if ($("new-role-edit")) $("new-role-edit").checked = false;
             if ($("new-role-admin")) $("new-role-admin").checked = false;
+            const btn = $("btn-add-role");
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i> Criar Cargo';
+            const cancel = $("btn-cancel-role");
+            if (cancel) cancel.style.display = "none";
             await loadRoles();
         } catch (e) {
             if (e.status === 401) return forceReauth();
@@ -420,7 +567,7 @@
     }
 
     async function deleteRole(id) {
-        if (!confirm("Apagar este cargo?")) return;
+        if (!(await uiConfirm("Apagar este cargo?", { danger: true, okText: "Apagar" }))) return;
         try {
             await api("/roles/" + id, { method: "DELETE" });
             await loadRoles();
@@ -445,17 +592,19 @@
         const list = $("users-list");
         if (!list) return;
         list.innerHTML = users.map((u) => {
-            const roleOptions = rolesCache.map((r) =>
-                `<option value="${r.id}" ${u.role && u.role.id === r.id ? "selected" : ""}>${escapeHtml(r.name)}</option>`
-            ).join("");
             const isMe = currentUser && currentUser.id === u.id;
             return `<div class="admin-item">
                 <div class="admin-item-main">
                     <strong>${escapeHtml(u.username)}</strong>
                     ${u.active ? "" : '<span class="mini-badge">Inativo</span>'}
                     ${isMe ? '<span class="mini-badge">você</span>' : ""}
-                    <div class="admin-item-sub">
-                        <select class="mini-select" data-user-role="${u.id}">${roleOptions}</select>
+                    <div class="admin-item-sub admin-role-row">
+                        <span class="admin-role-label">Cargo:</span>
+                        <div class="searchable-select-container mini-searchable" id="urole-container-${u.id}"></div>
+                    </div>
+                    <div class="admin-item-sub admin-role-row">
+                        <span class="admin-role-label">Org.:</span>
+                        <div class="searchable-select-container mini-searchable" id="uorg-container-${u.id}"></div>
                     </div>
                 </div>
                 <div class="admin-item-actions">
@@ -466,15 +615,29 @@
             </div>`;
         }).join("") || '<div class="admin-empty">Nenhum usuário.</div>';
 
-        list.querySelectorAll("[data-user-role]").forEach((sel) => {
-            sel.addEventListener("change", () => patchUser(sel.getAttribute("data-user-role"), { roleId: sel.value }));
+        users.forEach((u) => {
+            if (!window.initSearchableSelect) return;
+            window.initSearchableSelect(`urole-container-${u.id}`, rolesCache.map((r) => ({ value: r.id, label: r.name })), {
+                inputId: `urole-${u.id}`,
+                required: false,
+                hideSearch: true,
+                initialValue: u.role ? u.role.id : "",
+                onSelect: (val) => patchUser(u.id, { roleId: val })
+            });
+            window.initSearchableSelect(`uorg-container-${u.id}`, orgOptions(), {
+                inputId: `uorg-${u.id}`,
+                required: false,
+                hideSearch: true,
+                initialValue: u.organization || "",
+                onSelect: (val) => patchUser(u.id, { organization: val })
+            });
         });
         list.querySelectorAll("[data-user-toggle]").forEach((btn) => {
             btn.addEventListener("click", () => patchUser(btn.getAttribute("data-user-toggle"), { active: btn.getAttribute("data-active") !== "true" }));
         });
         list.querySelectorAll("[data-user-pass]").forEach((btn) => {
-            btn.addEventListener("click", () => {
-                const np = prompt("Nova senha (mín. 4 caracteres):");
+            btn.addEventListener("click", async () => {
+                const np = await uiPrompt("Nova senha (mín. 4 caracteres):", { password: true, placeholder: "nova senha" });
                 if (np) patchUser(btn.getAttribute("data-user-pass"), { password: np });
             });
         });
@@ -487,9 +650,10 @@
         const username = ($("new-user-name") && $("new-user-name").value || "").trim();
         const password = ($("new-user-pass") && $("new-user-pass").value || "");
         const roleId = ($("new-user-role") && $("new-user-role").value) || "";
+        const organization = searchableNewUserOrg ? searchableNewUserOrg.getValue() : "";
         if (!username || !password || !roleId) return showStatus("user-status", "Preencha usuário, senha e cargo.", "error");
         try {
-            await api("/users", { method: "POST", body: { username, password, roleId } });
+            await api("/users", { method: "POST", body: { username, password, roleId, organization } });
             showStatus("user-status", "Usuário criado.", "success");
             if ($("new-user-name")) $("new-user-name").value = "";
             if ($("new-user-pass")) $("new-user-pass").value = "";
@@ -512,7 +676,7 @@
     }
 
     async function deleteUser(id) {
-        if (!confirm("Apagar este usuário?")) return;
+        if (!(await uiConfirm("Apagar este usuário?", { danger: true, okText: "Apagar" }))) return;
         try {
             await api("/users/" + id, { method: "DELETE" });
             await loadUsers();
@@ -567,8 +731,8 @@
         // Servidor (settings)
         if ($("btn-test-api")) $("btn-test-api").addEventListener("click", () => testApi("api-url", "api-status"));
         if ($("btn-save-api")) $("btn-save-api").addEventListener("click", () => saveApi("api-url", "api-status"));
-        if ($("btn-pull-db")) $("btn-pull-db").addEventListener("click", () => {
-            if (confirm("Isso substitui os dados locais pelos do servidor. Continuar?")) pullStateFromServer(false);
+        if ($("btn-pull-db")) $("btn-pull-db").addEventListener("click", async () => {
+            if (await uiConfirm("Isso substitui os dados locais pelos do servidor. Continuar?", { okText: "Puxar" })) pullStateFromServer(false);
         });
         if ($("btn-push-db")) $("btn-push-db").addEventListener("click", () => pushStateToServer(false));
         if ($("btn-logout")) $("btn-logout").addEventListener("click", logout);
@@ -576,7 +740,8 @@
 
         // Admin
         if ($("btn-add-user")) $("btn-add-user").addEventListener("click", addUser);
-        if ($("btn-add-role")) $("btn-add-role").addEventListener("click", addRole);
+        if ($("btn-add-role")) $("btn-add-role").addEventListener("click", saveRole);
+        if ($("btn-cancel-role")) $("btn-cancel-role").addEventListener("click", cancelEditRole);
 
         // Ao abrir a aba admin, carrega os dados.
         const adminItem = document.querySelector('.menu-item[data-target="admin"]');
@@ -613,6 +778,13 @@
         }
     });
 
-    // Expõe para debug.
-    window.LaundrAPI = { api, login: doLogin, logout, pushStateToServer, pullStateFromServer, getApiUrl };
+    // Diálogos customizados reutilizáveis (substituem confirm/prompt, bloqueados no Tauri)
+    window.LaundrUI = { confirm: uiConfirm, prompt: uiPrompt };
+
+    // Expõe para debug e para o app (ex.: registrar quem criou uma transação).
+    window.LaundrAPI = {
+        api, login: doLogin, logout, pushStateToServer, pullStateFromServer, getApiUrl,
+        getUsername: () => (currentUser ? currentUser.username : null),
+        getUser: () => currentUser
+    };
 })();
