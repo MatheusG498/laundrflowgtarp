@@ -8,11 +8,14 @@
   },
   "package": {
     "productName": "laundrflow",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "tauri": {
     "allowlist": {
-      "all": false
+      "all": false,
+      "process": {
+        "relaunch": true
+      }
     },
     "bundle": {
       "active": true,
@@ -51,7 +54,15 @@
       "csp": null
     },
     "updater": {
-      "active": false
+      "active": true,
+      "dialog": false,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2NEI5Q0JCOTRFQTVFOUIKUldTYlh1cVV1NXhMcHBTcVhqa24xYUVEekpqd0R1UTJWT1VnY0U0eDMwSU4vOE9JZVViQndSaWMK",
+      "endpoints": [
+        "https://github.com/MatheusG498/laundrflowgtarp/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     },
     "windows": [
       {

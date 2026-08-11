@@ -1041,9 +1041,33 @@
         </div>
     </div>
 
+    <!-- Modal de Atualização (updater via GitHub Releases) -->
+    <div id="update-overlay" class="update-overlay">
+        <div class="update-box glass-panel">
+            <div class="update-header">
+                <i class="fa-solid fa-rocket"></i>
+                <div>
+                    <h3>Atualização disponível</h3>
+                    <span id="update-version">nova versão</span>
+                </div>
+            </div>
+            <div class="update-notes-label">Novidades desta versão</div>
+            <div class="update-notes" id="update-notes"></div>
+            <div class="update-status" id="update-status" style="display: none;"></div>
+            <div class="update-actions">
+                <button class="btn btn-secondary" id="update-later">Depois</button>
+                <button class="btn btn-primary" id="update-now">
+                    <i class="fa-solid fa-download"></i> Atualizar e reiniciar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Script Principal -->
     <script src="app_v1.js"></script>
     <!-- Camada de API: login, cargos e sincronização com o servidor central -->
     <script src="client_api.js"></script>
+    <!-- Atualização automática via GitHub Releases -->
+    <script src="updater.js"></script>
 </body>
 </html>

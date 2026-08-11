@@ -1,0 +1,51 @@
+name: Release (build + publicar com updater)
+
+# Dispara quando você envia uma tag de versão (ex.: v0.2.0)
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (com histórico/tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache do Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # A mensagem da tag anotada vira o changelog exibido no app
+      - name: Ler changelog da tag
+        id: notes
+        shell: bash
+        run: |
+          {
+            echo "body<<__EOF__"
+            git tag -l --format='%(contents)' "${GITHUB_REF_NAME}"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build e publicar release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "LaundrFlow ${{ github.ref_name }}"
+          releaseBody: ${{ steps.notes.outputs.body }}
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

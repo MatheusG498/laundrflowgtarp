@@ -4,6 +4,11 @@
 !*.env.example
 server/.env
 
+# Chave privada de assinatura do updater (Tauri) — NUNCA subir
+.tauri-key
+.tauri-key.pub
+*.key
+
 # ===== Node =====
 node_modules/
 npm-debug.log*
