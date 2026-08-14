@@ -18,7 +18,7 @@
     const LAST_SYNC_KEY = "laundrflow_last_sync";
     const DIRTY_KEY = "laundrflow_pending_sync";
     const REMEMBER_KEY = "laundrflow_remember";
-    const HEARTBEAT_MS = 25000;
+    const HEARTBEAT_MS = 5000; // auto-sync com o servidor a cada 5s
     const DEFAULT_API = "https://laundrflow-server.onrender.com";
 
     // -------------------- Estado em memória --------------------
@@ -29,6 +29,15 @@
     let heartbeatTimer = null;
     let syncing = false;
     let sectionsCatalog = []; // [{key,label}] vindo do servidor
+    let lastAppliedUpdatedAt = null; // último updatedAt do servidor já aplicado localmente
+
+    // Evita aplicar um pull enquanto o usuário está no meio de uma edição
+    function isUserBusy() {
+        const modalOpen = [...document.querySelectorAll(".modal-overlay, #modal-monitor-details")]
+            .some(m => m && getComputedStyle(m).display !== "none");
+        const dropdownOpen = !!document.querySelector(".searchable-select-container.open");
+        return modalOpen || dropdownOpen;
+    }
 
     // -------------------- Helpers básicos --------------------
     function $(id) { return document.getElementById(id); }
@@ -185,6 +194,7 @@
             setNetworkState(true);
             clearDirty();
             markSynced();
+            if (res && res.updatedAt) lastAppliedUpdatedAt = res.updatedAt; // não re-aplicar o próprio envio
             if (!silent) showStatus("sync-status", "Dados enviados com sucesso.", "success");
             return { ok: true, res };
         } catch (e) {
@@ -204,7 +214,7 @@
             const res = await api("/state");
             offlineMode = false;
             setNetworkState(true);
-            if (res && res.state) { applyState(res.state); markSynced(); }
+            if (res && res.state) { applyState(res.state); markSynced(); lastAppliedUpdatedAt = res.updatedAt || null; }
             if (!silent) showStatus("sync-status", "Dados carregados do servidor.", "success");
             return { ok: true };
         } catch (e) {
@@ -215,20 +225,34 @@
         }
     }
 
-    // -------------------- Loop automático --------------------
+    // -------------------- Loop automático (auto-sync a cada 5s) --------------------
     async function syncTick() {
         if (!currentUser || syncing) return;
+
+        // 1) Se há alterações locais pendentes, envia (prioridade — não perder o que fiz).
         if (canEdit() && isDirty()) {
             await pushStateToServer(true);
-        } else {
-            // Sem pendências: revalida a sessão (também detecta volta da conexão).
-            try {
-                await api("/auth/me");
-                offlineMode = false; setNetworkState(true);
-            } catch (e) {
-                if (e.network) { offlineMode = true; setNetworkState(false); }
-                else if (e.status === 401) { forceReauth(); }
+            return;
+        }
+
+        // 2) Sem pendências: puxa o estado e aplica só se outro usuário mudou algo.
+        try {
+            const res = await api("/state");
+            offlineMode = false;
+            setNetworkState(true);
+            const serverUpdatedAt = res && res.updatedAt;
+            if (res && res.state && serverUpdatedAt && serverUpdatedAt !== lastAppliedUpdatedAt) {
+                // Não sobrescreve enquanto o usuário está editando (modal/dropdown aberto);
+                // aplica na próxima batida quando ele terminar.
+                if (!isUserBusy()) {
+                    applyState(res.state);
+                    lastAppliedUpdatedAt = serverUpdatedAt;
+                    markSynced();
+                }
             }
+        } catch (e) {
+            if (e.network) { offlineMode = true; setNetworkState(false); }
+            else if (e.status === 401) { forceReauth(); }
         }
     }
     function startAutoSync() {
