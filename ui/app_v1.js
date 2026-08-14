@@ -26,6 +26,15 @@ function getUserOrg() {
         return (u && u.organization) ? u.organization : null;
     } catch (_) { return null; }
 }
+// Permissão de confirmar operações (Check, enviar faltante, concluir lançamento)
+function canConfirmOps() {
+    try {
+        const u = window.LaundrAPI && window.LaundrAPI.getUser && window.LaundrAPI.getUser();
+        if (!u) return true; // sem contexto de login (standalone) — não bloqueia
+        return !!(u.role && (u.role.canConfirm || u.role.isAdmin));
+    } catch (_) { return true; }
+}
+
 // Esquemas/clientes visíveis para o usuário
 function scopedSchemes() {
     const org = getUserOrg();
@@ -3603,9 +3612,13 @@ window.renderProcessingLaunches = function() {
                 </div>
             </div>
 
+            ${canConfirmOps() ? `
             <button class="btn-day-check" data-conclude="${tx.id}" style="width: 100%; justify-content: center; margin-top: 12px;">
                 <i class="fa-solid fa-check"></i> Marcar como Concluído
             </button>
+            ` : `
+            <div style="text-align: center; margin-top: 12px; font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-lock"></i> Sem permissão para concluir</div>
+            `}
         `;
         list.appendChild(card);
     });
@@ -3967,12 +3980,13 @@ window.openMonitorDetails = function(convId) {
 
             let shortfallHtml = "";
             if (shortfall > 0.01) {
+                const missingBtn = canConfirmOps()
+                    ? `<button class="btn-day-missing" onclick="window.sendMissingConversionDay('${conv.id}', ${index})"><i class="fa-solid fa-rotate-right"></i> Enviar faltante</button>`
+                    : "";
                 shortfallHtml = `
                     <div class="monitor-day-shortfall">
                         <span><i class="fa-solid fa-triangle-exclamation"></i> Faltam ${formatCurrency(shortfall)} do planejado (${formatCurrency(planned)})</span>
-                        <button class="btn-day-missing" onclick="window.sendMissingConversionDay('${conv.id}', ${index})">
-                            <i class="fa-solid fa-rotate-right"></i> Enviar faltante
-                        </button>
+                        ${missingBtn}
                     </div>
                 `;
             } else if (day.compensated) {
@@ -4001,11 +4015,15 @@ window.openMonitorDetails = function(convId) {
                         <span class="monitor-checked-text">
                             <i class="fa-solid fa-circle-check"></i> Enviado
                         </span>
-                    ` : `
+                    ` : (canConfirmOps() ? `
                         <button class="btn-day-check" onclick="window.confirmConversionDay('${conv.id}', ${index})">
                             <i class="fa-solid fa-check"></i> Check
                         </button>
-                    `}
+                    ` : `
+                        <span class="monitor-checked-text" style="color: var(--text-muted);">
+                            <i class="fa-solid fa-lock"></i> Sem permissão
+                        </span>
+                    `)}
                 </div>
                 ${shortfallHtml}
             `;

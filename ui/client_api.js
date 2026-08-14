@@ -503,6 +503,7 @@
             const badges = [
                 r.isAdmin ? '<span class="mini-badge admin">Admin</span>' : "",
                 r.canEditData ? '<span class="mini-badge edit">Edita</span>' : '<span class="mini-badge">Leitura</span>',
+                r.canConfirm ? '<span class="mini-badge confirm">Confirma</span>' : "",
                 r.system ? '<span class="mini-badge sys">Sistema</span>' : "",
             ].join("");
             const edit = `<button class="mini-btn" data-edit-role="${r.id}" title="Editar"><i class="fa-solid fa-pen"></i></button>`;
@@ -535,6 +536,7 @@
             c.checked = (role.permissions || []).includes(c.value);
         });
         if ($("new-role-edit")) $("new-role-edit").checked = !!role.canEditData;
+        if ($("new-role-confirm")) $("new-role-confirm").checked = !!role.canConfirm;
         if ($("new-role-admin")) $("new-role-admin").checked = !!role.isAdmin;
         const btn = $("btn-add-role");
         if (btn) btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Salvar Alterações';
@@ -550,6 +552,7 @@
         if ($("new-role-name")) $("new-role-name").value = "";
         document.querySelectorAll("#new-role-perms input:checked").forEach((c) => (c.checked = false));
         if ($("new-role-edit")) $("new-role-edit").checked = false;
+        if ($("new-role-confirm")) $("new-role-confirm").checked = false;
         if ($("new-role-admin")) $("new-role-admin").checked = false;
         const btn = $("btn-add-role");
         if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i> Criar Cargo';
@@ -564,8 +567,9 @@
         if (!name) return showStatus("role-status", "Informe o nome do cargo.", "error");
         const permissions = [...document.querySelectorAll("#new-role-perms input:checked")].map((c) => c.value);
         const canEditData = !!($("new-role-edit") && $("new-role-edit").checked);
+        const canConfirm = !!($("new-role-confirm") && $("new-role-confirm").checked);
         const adminFlag = !!($("new-role-admin") && $("new-role-admin").checked);
-        const body = { name, permissions, canEditData, isAdmin: adminFlag };
+        const body = { name, permissions, canEditData, canConfirm, isAdmin: adminFlag };
         try {
             if (editingRoleId) {
                 await api("/roles/" + editingRoleId, { method: "PATCH", body });
@@ -578,6 +582,7 @@
             if ($("new-role-name")) $("new-role-name").value = "";
             document.querySelectorAll("#new-role-perms input:checked").forEach((c) => (c.checked = false));
             if ($("new-role-edit")) $("new-role-edit").checked = false;
+            if ($("new-role-confirm")) $("new-role-confirm").checked = false;
             if ($("new-role-admin")) $("new-role-admin").checked = false;
             const btn = $("btn-add-role");
             if (btn) btn.innerHTML = '<i class="fa-solid fa-plus"></i> Criar Cargo';

@@ -14,6 +14,7 @@ function publicRole(role) {
     name: role.name,
     permissions: role.permissions || [],
     canEditData: !!role.canEditData,
+    canConfirm: !!role.canConfirm,
     isAdmin: !!role.isAdmin,
     system: !!role.system,
   };
@@ -27,7 +28,7 @@ router.get("/", async (_req, res) => {
 
 // POST /roles  { name, permissions[], canEditData, isAdmin }
 router.post("/", async (req, res) => {
-  const { name, permissions, canEditData, isAdmin } = req.body || {};
+  const { name, permissions, canEditData, canConfirm, isAdmin } = req.body || {};
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: "Informe o nome do cargo." });
   }
@@ -39,6 +40,7 @@ router.post("/", async (req, res) => {
     name: uname,
     permissions: sanitizePermissions(permissions),
     canEditData: !!canEditData,
+    canConfirm: !!canConfirm,
     isAdmin: !!isAdmin,
     system: false,
   };
@@ -57,11 +59,12 @@ router.patch("/:id", async (req, res) => {
   const role = await collections.roles().findOne({ _id: oid });
   if (!role) return res.status(404).json({ error: "Cargo não encontrado." });
 
-  const { name, permissions, canEditData, isAdmin } = req.body || {};
+  const { name, permissions, canEditData, canConfirm, isAdmin } = req.body || {};
   const update = {};
   if (name !== undefined) update.name = String(name).trim();
   if (permissions !== undefined) update.permissions = sanitizePermissions(permissions);
   if (canEditData !== undefined) update.canEditData = !!canEditData;
+  if (canConfirm !== undefined) update.canConfirm = !!canConfirm;
 
   // Não deixa remover o poder de admin do cargo de sistema (evita ficar sem nenhum admin).
   if (isAdmin !== undefined) {
