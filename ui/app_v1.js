@@ -3008,15 +3008,13 @@ if (btnClear) {
             return;
         }
         const ok = await appConfirm(
-            "ATENÇÃO: Isso apaga TODOS os dados compartilhados (clientes, lançamentos e operações) para TODOS os usuários, no servidor. Esta ação NÃO pode ser desfeita. Confirma?",
-            { danger: true, okText: "Apagar tudo" }
+            "ATENÇÃO: Isso apaga TODOS os lançamentos para TODOS os usuários, no servidor. Os clientes cadastrados (e o estoque deles) são mantidos. Esta ação NÃO pode ser desfeita. Confirma?",
+            { danger: true, okText: "Apagar lançamentos" }
         );
         if (!ok) return;
 
-        // Limpa o estado e sincroniza (o servidor passa a ter tudo vazio)
-        state.schemes = [];
+        // Apaga só os lançamentos (mantém clientes/esquemas). Sincroniza com o servidor.
         state.transactions = [];
-        state.conversions = [];
         saveState(); // grava local + envia ao servidor
 
         // Re-renderiza as telas
