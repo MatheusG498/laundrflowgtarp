@@ -98,6 +98,19 @@ function scopedConversions() {
     return convs.filter(c => ids.has(c.sourceSchemeId) || ids.has(c.destSchemeId));
 }
 
+// Filtro de cliente do Dashboard (id do esquema, ou "all" para todos)
+let dashboardSchemeFilter = "all";
+// Esquemas do Dashboard: escopo da organização, refinado pelo filtro de cliente
+function dashSchemes() {
+    const base = scopedSchemes();
+    return dashboardSchemeFilter === "all" ? base : base.filter(s => s.id === dashboardSchemeFilter);
+}
+// Transações do Dashboard: escopo da organização, refinado pelo filtro de cliente
+function dashTransactions() {
+    const base = scopedTransactions();
+    return dashboardSchemeFilter === "all" ? base : base.filter(t => t.schemeId === dashboardSchemeFilter);
+}
+
 // Usuário logado que está criando a transação (trilha de auditoria)
 function currentTxUser() {
     try {
@@ -514,8 +527,10 @@ window.initSearchableSelect = function(containerId, options, config = {}) {
                 // Dispara o callback change se definido
                 if (onSelect) onSelect(opt.value, opt.label);
                 
-                // Dispara evento de change no input hidden para listeners normais do DOM
-                hiddenInput.dispatchEvent(new Event("change"));
+                // Dispara evento de change no input hidden para listeners normais do DOM.
+                // bubbles:true para que listeners delegados no container-pai também recebam
+                // (o input é recriado a cada populate, então listeners diretos ficariam órfãos).
+                hiddenInput.dispatchEvent(new Event("change", { bubbles: true }));
             });
 
             optionsContainer.appendChild(el);
@@ -725,9 +740,13 @@ let chartTimelineInstance = null;
 
 // Dashboard
 function updateDashboard() {
-    // Dados no escopo da organização do usuário (ou tudo, se "Todos")
-    const txs = scopedTransactions();
-    const schemes = scopedSchemes();
+    // Mantém as opções do filtro de cliente atualizadas com os clientes atuais
+    if (typeof refreshDashboardSchemeFilter === "function") refreshDashboardSchemeFilter();
+
+    // Dados no escopo da organização do usuário (ou tudo, se "Todos"),
+    // refinados pelo filtro de cliente do Dashboard
+    const txs = dashTransactions();
+    const schemes = dashSchemes();
 
     // Cálculos
     // Total depositado nos canais de fachada (sujo)
@@ -805,9 +824,9 @@ function renderCharts() {
     const ctxDist = document.getElementById("chart-distribution").getContext("2d");
     const ctxTime = document.getElementById("chart-timeline").getContext("2d");
 
-    // Dados no escopo da organização do usuário
-    const txs = scopedTransactions();
-    const schemes = scopedSchemes();
+    // Dados no escopo da organização, refinados pelo filtro de cliente do Dashboard
+    const txs = dashTransactions();
+    const schemes = dashSchemes();
 
     // Gráfico 1: Distribuição por Canal (Esquema)
     const schemeAmounts = {};
@@ -1994,7 +2013,7 @@ function populateSchemeSelect() {
             });
             
             const input = document.getElementById("tx-scheme");
-            if (input) input.dispatchEvent(new Event("change"));
+            if (input) input.dispatchEvent(new Event("change", { bubbles: true }));
         }
     });
 
@@ -2596,17 +2615,32 @@ window.updateTxPreview = function() {
     const cost = amount * (taxPct / 100);
     const net = amount - cost;
 
+    // Imposto legal (cascata: incide sobre o líquido após a taxa) — igual à conversão segura
+    const legalEl = document.getElementById("tx-legal-tax");
+    const legalEnabledEl = document.getElementById("tx-legal-tax-enabled");
+    const legalEnabled = !!(legalEnabledEl && legalEnabledEl.checked);
+    const legalPct = legalEnabled ? (parseFloat(legalEl && legalEl.value) || 0) : 0;
+    const legalCost = net * (legalPct / 100);
+    const finalNet = net - legalCost;
+
     const bruto = document.getElementById("tx-preview-bruto");
     const taxaRow = document.getElementById("tx-preview-taxa-row");
     const taxaPct = document.getElementById("tx-preview-taxa-pct");
     const taxa = document.getElementById("tx-preview-taxa");
+    const legalRow = document.getElementById("tx-preview-legal-row");
+    const legalPctEl = document.getElementById("tx-preview-legal-pct");
+    const legalEl2 = document.getElementById("tx-preview-legal");
     const liquido = document.getElementById("tx-preview-liquido");
 
     if (bruto) bruto.textContent = formatCurrency(amount);
     if (taxaPct) taxaPct.textContent = String(taxPct).replace(".", ",");
     if (taxa) taxa.textContent = "- " + formatCurrency(cost);
-    if (liquido) liquido.textContent = formatCurrency(net);
     if (taxaRow) taxaRow.style.opacity = enabled ? "1" : "0.4";
+    // Linha do imposto legal só aparece quando ativada
+    if (legalRow) legalRow.style.display = legalEnabled ? "flex" : "none";
+    if (legalPctEl) legalPctEl.textContent = String(legalPct).replace(".", ",");
+    if (legalEl2) legalEl2.textContent = "- " + formatCurrency(legalCost);
+    if (liquido) liquido.textContent = formatCurrency(finalNet);
 };
 
 // Liga/desliga o campo de taxa conforme o toggle "Aplicar"
@@ -2620,13 +2654,45 @@ window.toggleTxTax = function() {
     window.updateTxPreview();
 };
 
+// Preenche o imposto legal automaticamente pela tabela progressiva (igual à conversão segura),
+// com base no valor informado. Só age quando o imposto legal está ativado.
+window.autofillTxLegalTax = function() {
+    const legalEl = document.getElementById("tx-legal-tax");
+    const legalEnabledEl = document.getElementById("tx-legal-tax-enabled");
+    if (!legalEl || !legalEnabledEl || !legalEnabledEl.checked) return;
+    const amount = parseMoneyValue("tx-amount") || 0;
+    legalEl.value = calculateProgressiveTax(amount);
+};
+
+// Liga/desliga o campo de imposto legal conforme o toggle "Aplicar"
+window.toggleTxLegalTax = function() {
+    const legalEl = document.getElementById("tx-legal-tax");
+    const legalEnabledEl = document.getElementById("tx-legal-tax-enabled");
+    if (!legalEl || !legalEnabledEl) return;
+    legalEl.disabled = !legalEnabledEl.checked;
+    legalEl.style.opacity = legalEnabledEl.checked ? "1" : "0.4";
+    // Ao ativar, calcula automaticamente pela tabela progressiva conforme o valor
+    if (legalEnabledEl.checked) window.autofillTxLegalTax();
+    window.updateTxPreview();
+};
+
 document.addEventListener("DOMContentLoaded", () => {
     const amountEl = document.getElementById("tx-amount");
     const taxEl = document.getElementById("tx-tax");
     const enabledEl = document.getElementById("tx-tax-enabled");
-    if (amountEl) amountEl.addEventListener("input", window.updateTxPreview);
+    // Ao mudar o valor, recalcula o imposto legal automaticamente (tabela progressiva)
+    if (amountEl) amountEl.addEventListener("input", () => {
+        window.autofillTxLegalTax();
+        window.updateTxPreview();
+    });
     if (taxEl) taxEl.addEventListener("input", window.updateTxPreview);
     if (enabledEl) enabledEl.addEventListener("change", window.toggleTxTax);
+
+    const legalEl = document.getElementById("tx-legal-tax");
+    const legalEnabledEl = document.getElementById("tx-legal-tax-enabled");
+    if (legalEl) legalEl.addEventListener("input", window.updateTxPreview);
+    if (legalEnabledEl) legalEnabledEl.addEventListener("change", window.toggleTxLegalTax);
+
     window.updateTxPreview();
 });
 
@@ -2658,8 +2724,21 @@ if (formTx) {
         } else {
             appliedTax = (txTaxInput && txTaxInput.value !== "") ? parseFloat(txTaxInput.value) : scheme.tax;
         }
-        const cost = amount * (appliedTax / 100);
-        const netAmount = amount - cost;
+        const taxCost = amount * (appliedTax / 100);
+        const afterTax = amount - taxCost;
+
+        // Imposto legal em cascata (incide sobre o líquido após a taxa) — igual à conversão segura
+        const txLegalInput = document.getElementById("tx-legal-tax");
+        const txLegalEnabled = document.getElementById("tx-legal-tax-enabled");
+        let appliedLegalTax = 0;
+        if (txLegalEnabled && txLegalEnabled.checked) {
+            appliedLegalTax = (txLegalInput && txLegalInput.value !== "") ? parseFloat(txLegalInput.value) : 0;
+        }
+        const legalCost = afterTax * (appliedLegalTax / 100);
+
+        // Custo total = taxa de operação + imposto legal; líquido final desconta os dois
+        const cost = taxCost + legalCost;
+        const netAmount = afterTax - legalCost;
 
         // Captura a movimentação de estoque se o esquema possuir controle
         const stockMovements = [];
@@ -2698,6 +2777,9 @@ if (formTx) {
             description,
             cost,
             netAmount,
+            taxRate: appliedTax,
+            legalTaxRate: appliedLegalTax,
+            legalTaxCost: legalCost,
             stockItemId: stockMovements.length > 0 ? stockMovements[0].itemId : "",
             stockQty: stockMovements.length > 0 ? stockMovements[0].qty : null,
             stockMovements: stockMovements,
@@ -2722,7 +2804,11 @@ if (formTx) {
         if (txTaxInput) {
             txTaxInput.value = "";
         }
-        
+        // Reseta o imposto legal (volta ao padrão: desligado e vazio) e re-sincroniza os toggles
+        if (txLegalInput) txLegalInput.value = "";
+        if (txLegalEnabled) txLegalEnabled.checked = false;
+        if (window.toggleTxLegalTax) window.toggleTxLegalTax();
+
         // Reabilita todas as opções de etapa e status após o reset do form
         // Restaura as opções completas e os valores padrão dos seletores pesquisáveis
         if (searchableTxType) {
@@ -2971,9 +3057,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    if (txSchemeSelect && txStockMovementsSection && txStockMovementsContainer) {
-        txSchemeSelect.addEventListener("change", () => {
-            const selectedSchemeId = txSchemeSelect.value;
+    // O select pesquisável recria o input #tx-scheme a cada populateSchemeSelect(),
+    // então o listener é ligado ao container estável (#tx-scheme-container) via delegação
+    // e lê sempre o elemento atual — senão a taxa/etapas nunca atualizam.
+    const txSchemeContainer = document.getElementById("tx-scheme-container");
+    if (txSchemeContainer && txStockMovementsSection && txStockMovementsContainer) {
+        txSchemeContainer.addEventListener("change", () => {
+            const curScheme = document.getElementById("tx-scheme");
+            const selectedSchemeId = curScheme ? curScheme.value : "";
             const selectedScheme = state.schemes.find(s => s.id === selectedSchemeId);
             
             const txTaxInput = document.getElementById("tx-tax");
@@ -3245,6 +3336,37 @@ function initLedgerFilters() {
 const ledgerSearch = document.getElementById("ledger-search");
 if (ledgerSearch) ledgerSearch.addEventListener("input", renderLedger);
 document.addEventListener("DOMContentLoaded", initLedgerFilters);
+
+// --- Filtro de cliente do Dashboard ---
+let searchableDashboardScheme = null;
+function refreshDashboardSchemeFilter() {
+    if (!searchableDashboardScheme) return;
+    const opts = [{ value: "all", label: "Todos os clientes" }].concat(
+        scopedSchemes().map(s => ({ value: s.id, label: `${s.name} (${s.organization || 'Geral'})` }))
+    );
+    const cur = searchableDashboardScheme.getValue();
+    searchableDashboardScheme.updateOptions(opts);
+    // Se o cliente filtrado deixou de existir (excluído/fora do escopo), volta para "Todos"
+    if (!opts.some(o => o.value === cur)) {
+        searchableDashboardScheme.setValue("all");
+        dashboardSchemeFilter = "all";
+    }
+}
+function initDashboardFilter() {
+    const c = document.getElementById("dashboard-scheme-filter-container");
+    if (c && !searchableDashboardScheme) {
+        searchableDashboardScheme = initSearchableSelect(c, [{ value: "all", label: "Todos os clientes" }], {
+            inputId: "dashboard-scheme-filter", placeholder: "Todos os clientes", initialValue: "all",
+            required: false,
+            onSelect: (val) => {
+                dashboardSchemeFilter = val || "all";
+                if (typeof updateDashboard === "function") updateDashboard();
+            }
+        });
+    }
+    refreshDashboardSchemeFilter();
+}
+document.addEventListener("DOMContentLoaded", initDashboardFilter);
 
 // ----------------------------------------------------
 // 6. INICIALIZAÇÃO DO APP NA CARGA DA PÁGINA

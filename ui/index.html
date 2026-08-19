@@ -98,6 +98,11 @@
                 
                 <!-- 1. DASHBOARD -->
                 <section id="section-dashboard" class="app-section active">
+                    <!-- Filtro de cliente do Dashboard -->
+                    <div class="dashboard-filter-bar glass-panel" style="position:relative; z-index:100; display:flex; align-items:center; gap:12px; padding:12px 16px; margin-bottom:16px; flex-wrap:wrap; overflow:visible;">
+                        <span style="font-size:13px; color:var(--text-muted); display:flex; align-items:center; gap:6px; white-space:nowrap;"><i class="fa-solid fa-filter"></i> Filtrar por cliente:</span>
+                        <div id="dashboard-scheme-filter-container" class="searchable-select-container" style="min-width:240px; flex:1; max-width:360px;"></div>
+                    </div>
                     <!-- Cards de Métricas -->
                     <div class="metrics-grid">
                         <div class="metric-card">
@@ -337,6 +342,16 @@
                                         </label>
                                         <input type="number" id="tx-tax" min="0" max="100" step="0.1" placeholder="Ex: 10" required>
                                     </div>
+                                    <div class="form-group" style="flex: 1;">
+                                        <label for="tx-legal-tax" style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+                                            <span>Imposto Legal (%)</span>
+                                            <label class="tax-toggle" title="Ativar/desativar o imposto legal (calculado automaticamente pela tabela progressiva conforme o valor)">
+                                                <input type="checkbox" id="tx-legal-tax-enabled">
+                                                <span>Aplicar</span>
+                                            </label>
+                                        </label>
+                                        <input type="number" id="tx-legal-tax" min="0" max="100" step="0.1" placeholder="Automático" title="Calculado automaticamente pela tabela progressiva conforme o valor (editável)" disabled style="opacity: 0.4;">
+                                    </div>
                                     <div class="form-group" style="flex: 1.5;">
                                         <label for="tx-date">Data do Registro</label>
                                         <input type="date" id="tx-date" required>
@@ -389,6 +404,10 @@
                                         <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;" id="tx-preview-taxa-row">
                                             <span style="color: var(--text-muted);">Taxa Aplicada (<span id="tx-preview-taxa-pct">0</span>%):</span>
                                             <span id="tx-preview-taxa" style="color: var(--color-warning); font-weight: 600;">- R$ 0,00</span>
+                                        </div>
+                                        <div style="display: none; justify-content: space-between; border-bottom: 1px dashed var(--border-color); padding-bottom: 6px;" id="tx-preview-legal-row">
+                                            <span style="color: var(--text-muted);">Imposto Legal (<span id="tx-preview-legal-pct">0</span>%):</span>
+                                            <span id="tx-preview-legal" style="color: var(--color-warning); font-weight: 600;">- R$ 0,00</span>
                                         </div>
                                         <div style="display: flex; justify-content: space-between; font-size: 14px; font-weight: 800; padding-top: 4px;">
                                             <span style="color: var(--text-primary);">Valor Líquido:</span>
