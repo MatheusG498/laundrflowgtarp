@@ -26,6 +26,15 @@ function getUserOrg() {
         return (u && u.organization) ? u.organization : null;
     } catch (_) { return null; }
 }
+// Permissão de editar/apagar dados
+function canEditDataPerm() {
+    try {
+        const u = window.LaundrAPI && window.LaundrAPI.getUser && window.LaundrAPI.getUser();
+        if (!u) return true; // sem contexto de login (standalone)
+        return !!(u.role && (u.role.canEditData || u.role.isAdmin));
+    } catch (_) { return true; }
+}
+
 // Permissão de confirmar operações (Check, enviar faltante, concluir lançamento)
 function canConfirmOps() {
     try {
@@ -2994,11 +3003,29 @@ if (btnExport) {
 const btnClear = document.getElementById("btn-clear-ledger");
 if (btnClear) {
     btnClear.addEventListener("click", async () => {
-        if (await appConfirm("ATENÇÃO: Isso apagará permanentemente todos os registros do livro-razão e esquemas personalizados, restaurando os dados iniciais de simulação. Confirma?", { danger: true, okText: "Apagar tudo" })) {
-            localStorage.removeItem("laundrflow_schemes");
-            localStorage.removeItem("laundrflow_transactions");
-            window.location.reload();
+        if (!canEditDataPerm()) {
+            await appConfirm("Seu cargo não tem permissão para apagar dados.", { okText: "Entendi" });
+            return;
         }
+        const ok = await appConfirm(
+            "ATENÇÃO: Isso apaga TODOS os dados compartilhados (clientes, lançamentos e operações) para TODOS os usuários, no servidor. Esta ação NÃO pode ser desfeita. Confirma?",
+            { danger: true, okText: "Apagar tudo" }
+        );
+        if (!ok) return;
+
+        // Limpa o estado e sincroniza (o servidor passa a ter tudo vazio)
+        state.schemes = [];
+        state.transactions = [];
+        state.conversions = [];
+        saveState(); // grava local + envia ao servidor
+
+        // Re-renderiza as telas
+        if (typeof updateDashboard === "function") updateDashboard();
+        if (typeof renderSchemes === "function") renderSchemes();
+        if (typeof renderLegalSchemes === "function") renderLegalSchemes();
+        if (window.renderConversions) window.renderConversions();
+        if (typeof renderLedger === "function") renderLedger();
+        if (typeof populateSchemeSelect === "function") populateSchemeSelect();
     });
 }
 
