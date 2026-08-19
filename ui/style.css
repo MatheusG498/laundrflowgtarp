@@ -2733,6 +2733,7 @@ input[type="number"] {
 .mini-badge.admin { background: rgba(var(--color-primary-rgb), 0.15); color: var(--color-primary); }
 .mini-badge.edit { background: rgba(var(--color-success-rgb), 0.15); color: var(--color-success); }
 .mini-badge.confirm { background: rgba(157, 78, 221, 0.18); color: #b388ff; }
+.mini-badge.stock { background: rgba(0, 188, 212, 0.15); color: #22d3ee; }
 .mini-badge.sys { background: rgba(255, 179, 0, 0.15); color: var(--color-warning); }
 .admin-empty {
     text-align: center;

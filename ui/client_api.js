@@ -503,6 +503,7 @@
             const badges = [
                 r.isAdmin ? '<span class="mini-badge admin">Admin</span>' : "",
                 r.canEditData ? '<span class="mini-badge edit">Edita</span>' : '<span class="mini-badge">Leitura</span>',
+                r.canEditStock ? '<span class="mini-badge stock">Estoque</span>' : "",
                 r.canConfirm ? '<span class="mini-badge confirm">Confirma</span>' : "",
                 r.system ? '<span class="mini-badge sys">Sistema</span>' : "",
             ].join("");
@@ -536,6 +537,7 @@
             c.checked = (role.permissions || []).includes(c.value);
         });
         if ($("new-role-edit")) $("new-role-edit").checked = !!role.canEditData;
+        if ($("new-role-stock")) $("new-role-stock").checked = !!role.canEditStock;
         if ($("new-role-confirm")) $("new-role-confirm").checked = !!role.canConfirm;
         if ($("new-role-admin")) $("new-role-admin").checked = !!role.isAdmin;
         const btn = $("btn-add-role");
@@ -552,6 +554,7 @@
         if ($("new-role-name")) $("new-role-name").value = "";
         document.querySelectorAll("#new-role-perms input:checked").forEach((c) => (c.checked = false));
         if ($("new-role-edit")) $("new-role-edit").checked = false;
+        if ($("new-role-stock")) $("new-role-stock").checked = false;
         if ($("new-role-confirm")) $("new-role-confirm").checked = false;
         if ($("new-role-admin")) $("new-role-admin").checked = false;
         const btn = $("btn-add-role");
@@ -567,9 +570,10 @@
         if (!name) return showStatus("role-status", "Informe o nome do cargo.", "error");
         const permissions = [...document.querySelectorAll("#new-role-perms input:checked")].map((c) => c.value);
         const canEditData = !!($("new-role-edit") && $("new-role-edit").checked);
+        const canEditStock = !!($("new-role-stock") && $("new-role-stock").checked);
         const canConfirm = !!($("new-role-confirm") && $("new-role-confirm").checked);
         const adminFlag = !!($("new-role-admin") && $("new-role-admin").checked);
-        const body = { name, permissions, canEditData, canConfirm, isAdmin: adminFlag };
+        const body = { name, permissions, canEditData, canEditStock, canConfirm, isAdmin: adminFlag };
         try {
             if (editingRoleId) {
                 await api("/roles/" + editingRoleId, { method: "PATCH", body });

@@ -18,6 +18,7 @@ export const DEFAULT_ROLES = [
     name: "Administrador",
     permissions: SECTION_KEYS,
     canEditData: true,
+    canEditStock: true, // pode editar o estoque (produtos/insumos)
     canConfirm: true, // pode confirmar operações (Check, enviar faltante, concluir)
     isAdmin: true, // pode gerenciar usuários e cargos
     system: true, // cargo protegido: não pode ser apagado
@@ -26,6 +27,7 @@ export const DEFAULT_ROLES = [
     name: "Gerente",
     permissions: SECTION_KEYS,
     canEditData: true,
+    canEditStock: true,
     canConfirm: true,
     isAdmin: false,
     system: false,
@@ -34,6 +36,7 @@ export const DEFAULT_ROLES = [
     name: "Operador",
     permissions: ["dashboard", "transactions", "monitor"],
     canEditData: true,
+    canEditStock: true,
     canConfirm: false,
     isAdmin: false,
     system: false,
@@ -42,6 +45,7 @@ export const DEFAULT_ROLES = [
     name: "Visualizador",
     permissions: ["dashboard", "ledger"],
     canEditData: false, // só leitura
+    canEditStock: false,
     canConfirm: false,
     isAdmin: false,
     system: false,

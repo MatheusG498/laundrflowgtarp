@@ -44,6 +44,38 @@ function canConfirmOps() {
     } catch (_) { return true; }
 }
 
+// Permissão de administrador (editar/excluir lançamentos e operações já lançados)
+function isAdminUser() {
+    try {
+        const u = window.LaundrAPI && window.LaundrAPI.getUser && window.LaundrAPI.getUser();
+        if (!u) return true; // sem contexto de login (standalone) — não bloqueia
+        return !!(u.role && u.role.isAdmin);
+    } catch (_) { return true; }
+}
+
+// Permissão de editar o estoque (produtos/insumos). Admin sempre pode.
+function canEditStockPerm() {
+    try {
+        const u = window.LaundrAPI && window.LaundrAPI.getUser && window.LaundrAPI.getUser();
+        if (!u) return true; // sem contexto de login (standalone) — não bloqueia
+        return !!(u.role && (u.role.canEditStock || u.role.isAdmin));
+    } catch (_) { return true; }
+}
+
+// Bloqueia uma ação de edição de dados (lançamentos/operações/clientes) se o cargo não permitir
+function requireEditData(msg) {
+    if (canEditDataPerm()) return true;
+    try { alert(msg || "Seu cargo não tem permissão para editar registros lançados."); } catch (_) {}
+    return false;
+}
+
+// Bloqueia uma ação de edição de estoque se o cargo não permitir
+function requireEditStock(msg) {
+    if (canEditStockPerm()) return true;
+    try { alert(msg || "Seu cargo não tem permissão para editar o estoque."); } catch (_) {}
+    return false;
+}
+
 // Esquemas/clientes visíveis para o usuário
 function scopedSchemes() {
     const org = getUserOrg();
@@ -1132,6 +1164,7 @@ function renderSchemes() {
                     ` : `<span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-info-circle"></i> Sem Estoque</span>`}
                     
                     <div style="display: flex; gap: 4px; align-items: center;">
+                        ${canEditDataPerm() ? `
                         <button class="btn-icon-move" onclick="openMoveOrgModal('${scheme.id}', event)" title="Mover de Organização">
                             <i class="fa-solid fa-right-from-bracket" style="font-size: 14px;"></i>
                         </button>
@@ -1141,6 +1174,7 @@ function renderSchemes() {
                         <button class="btn-icon-danger" onclick="deleteScheme('${scheme.id}', event)" title="Excluir Esquema" style="background: none; border: none; color: var(--color-danger); cursor: pointer; padding: 6px;">
                             <i class="fa-solid fa-trash-can" style="font-size: 14px;"></i>
                         </button>
+                        ` : `<span style="font-size: 11px; color: var(--text-muted);" title="Somente administradores"><i class="fa-solid fa-lock"></i></span>`}
                     </div>
                 </div>
             `;
@@ -1356,6 +1390,7 @@ function renderLegalSchemes() {
                     ` : `<span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-info-circle"></i> Sem Estoque</span>`}
                     
                     <div style="display: flex; gap: 4px; align-items: center;">
+                        ${canEditDataPerm() ? `
                         <button class="btn-icon-move" onclick="openMoveOrgModal('${scheme.id}', event)" title="Mover de Organização">
                             <i class="fa-solid fa-right-from-bracket" style="font-size: 14px;"></i>
                         </button>
@@ -1365,6 +1400,7 @@ function renderLegalSchemes() {
                         <button class="btn-icon-danger" onclick="deleteScheme('${scheme.id}', event)" title="Excluir Esquema" style="background: none; border: none; color: var(--color-danger); cursor: pointer; padding: 6px;">
                             <i class="fa-solid fa-trash-can" style="font-size: 14px;"></i>
                         </button>
+                        ` : `<span style="font-size: 11px; color: var(--text-muted);" title="Somente administradores"><i class="fa-solid fa-lock"></i></span>`}
                     </div>
                 </div>
             `;
@@ -1621,10 +1657,21 @@ function renderStockModal() {
             tableBody.appendChild(row);
         });
     }
+
+    // Só quem tem "Pode editar estoque" (ou admin) altera o estoque
+    if (!canEditStockPerm()) {
+        tableBody.querySelectorAll("input, select, button").forEach(el => {
+            el.disabled = true;
+            el.title = "Seu cargo não tem permissão para editar o estoque";
+        });
+        const addForm = document.getElementById("form-add-stock-item");
+        if (addForm) addForm.querySelectorAll("input, select, button").forEach(el => { el.disabled = true; });
+    }
 }
 
 // Atualizar campo específico de um item de estoque diretamente
 window.updateItemField = function(schemeId, itemId, field, val) {
+    if (!requireEditStock("Seu cargo não tem permissão para editar o estoque.")) return;
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (!scheme || !scheme.items) return;
 
@@ -1668,6 +1715,7 @@ window.updateItemField = function(schemeId, itemId, field, val) {
 
 // Atualizar a quantidade necessária de um insumo na receita do produto
 window.updateItemRecipeQty = function(schemeId, productId, insumoId, qty) {
+    if (!requireEditStock("Seu cargo não tem permissão para editar o estoque.")) return;
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (!scheme || !scheme.items) return;
 
@@ -1776,6 +1824,7 @@ window.renderNewProductRecipeInputs = function() {
 
 // Excluir Item de Estoque
 window.deleteStockItem = async function(schemeId, itemId) {
+    if (!requireEditStock("Seu cargo não tem permissão para excluir itens de estoque.")) return;
     if (!(await appConfirm("Tem certeza que deseja remover este item de estoque?", { danger: true, okText: "Remover" }))) return;
 
     const scheme = state.schemes.find(s => s.id === schemeId);
@@ -1799,6 +1848,7 @@ window.deleteStockItem = async function(schemeId, itemId) {
 
 // Ajustar quantidade física do item
 window.adjustStockItemQty = function(schemeId, itemId, qty) {
+    if (!requireEditStock("Seu cargo não tem permissão para editar o estoque.")) return;
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (scheme && scheme.items) {
         const item = scheme.items.find(i => i.id === itemId);
@@ -1812,6 +1862,7 @@ window.adjustStockItemQty = function(schemeId, itemId, qty) {
 
 // Produzir produto composto a partir de insumos
 window.produceProduct = function(schemeId, productId) {
+    if (!requireEditStock("Seu cargo não tem permissão para produzir itens de estoque.")) return;
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (!scheme || !scheme.items) return;
 
@@ -2090,8 +2141,19 @@ function renderLedger() {
             <td class="text-success">${formatCurrency(tx.netAmount)}</td>
             <td>${stockBadge}</td>
             <td>${statusBadge}</td>
-            <td class="hash-cell" title="Assinatura única auditável: ${tx.hash}">${tx.hash.substring(0, 10)}...${tx.hash.substring(54)}</td>
+            <td class="hash-cell" title="Assinatura única auditável: ${tx.hash}">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <span>${tx.hash.substring(0, 10)}...${tx.hash.substring(54)}</span>
+                    ${canEditDataPerm() ? `
+                    <span style="display:flex; gap:2px; flex-shrink:0;">
+                        <button class="btn-icon-edit" onclick="window.openEditTxModal('${tx.id}', event)" title="Editar lançamento" style="background:none; border:none; cursor:pointer; padding:4px;"><i class="fa-solid fa-pen-to-square" style="font-size:12px;"></i></button>
+                        <button class="btn-icon-danger" onclick="window.deleteTransaction('${tx.id}', event)" title="Excluir lançamento" style="background:none; border:none; color:var(--color-danger); cursor:pointer; padding:4px;"><i class="fa-solid fa-trash-can" style="font-size:12px;"></i></button>
+                    </span>
+                    ` : ""}
+                </div>
+            </td>
         `;
+        if (tx.editedBy) row.title = `Editado por ${tx.editedBy}${tx.editedAt ? ' em ' + new Date(tx.editedAt).toLocaleString('pt-BR') : ''}`;
         return row;
     }
 
@@ -2297,6 +2359,7 @@ if (formLegalScheme) {
 
 // Deletar Esquema
 window.deleteScheme = async function(id) {
+    if (!requireEditData("Seu cargo não tem permissão para excluir clientes.")) return;
     if (await appConfirm("Tem certeza que deseja desativar este canal de fluxo? Transações vinculadas continuarão no histórico.", { danger: true, okText: "Desativar" })) {
         state.schemes = state.schemes.filter(s => s.id !== id);
         saveState();
@@ -2306,12 +2369,123 @@ window.deleteScheme = async function(id) {
     }
 };
 
+// ----------------------------------------------------
+// Edição / Exclusão de Lançamentos (somente administradores)
+// ----------------------------------------------------
+
+// Recalcula e exibe custo/líquido no modal de edição de lançamento
+window.updateEditTxPreview = function() {
+    const previewEl = document.getElementById("edit-tx-preview");
+    if (!previewEl) return;
+    const amount = parseMoneyValue("edit-tx-amount") || 0;
+    const taxEl = document.getElementById("edit-tx-tax");
+    const taxPct = (taxEl && taxEl.value !== "") ? parseFloat(taxEl.value) : 0;
+    const cost = amount * (taxPct / 100);
+    const net = amount - cost;
+    previewEl.innerHTML = `Custo: <strong class="text-warning">${formatCurrency(cost)}</strong> · Líquido: <strong class="text-success">${formatCurrency(net)}</strong>`;
+};
+
+window.openEditTxModal = function(txId, event) {
+    if (event) event.stopPropagation();
+    if (!requireEditData("Seu cargo não tem permissão para editar lançamentos.")) return;
+    const tx = state.transactions.find(t => t.id === txId);
+    if (!tx) return;
+
+    document.getElementById("edit-tx-id").value = tx.id;
+    document.getElementById("edit-tx-date").value = tx.date || "";
+    document.getElementById("edit-tx-type").value = tx.type || "Depósito";
+    document.getElementById("edit-tx-status").value = tx.status || "Processando";
+    document.getElementById("edit-tx-desc").value = tx.description || "";
+    document.getElementById("edit-tx-obs").value = tx.observation || "";
+    window.setMoneyValue("edit-tx-amount", tx.amount || 0);
+
+    // Deriva a taxa a partir do custo/valor já registrados (fallback: taxa do esquema)
+    let taxPct = 0;
+    if (tx.amount && tx.cost !== undefined && tx.cost !== null && tx.amount !== 0) {
+        taxPct = (tx.cost / tx.amount) * 100;
+    } else {
+        const scheme = state.schemes.find(s => s.id === tx.schemeId);
+        taxPct = scheme ? (scheme.tax || 0) : 0;
+    }
+    // Arredonda para no máximo 2 casas para não poluir o campo
+    document.getElementById("edit-tx-tax").value = Math.round(taxPct * 100) / 100;
+
+    window.updateEditTxPreview();
+    const modal = document.getElementById("modal-edit-tx");
+    if (modal) modal.style.display = "flex";
+};
+
+window.closeEditTxModal = function() {
+    const modal = document.getElementById("modal-edit-tx");
+    if (modal) modal.style.display = "none";
+};
+
+window.deleteTransaction = async function(txId, event) {
+    if (event) event.stopPropagation();
+    if (!requireEditData("Seu cargo não tem permissão para excluir lançamentos.")) return;
+    if (!(await appConfirm("Excluir este lançamento do Livro-Razão? Esta ação não pode ser desfeita.", { danger: true, okText: "Excluir" }))) return;
+    state.transactions = state.transactions.filter(t => t.id !== txId);
+    saveState();
+    if (typeof renderLedger === "function") renderLedger();
+    if (typeof updateDashboard === "function") updateDashboard();
+    if (typeof renderCharts === "function") renderCharts();
+};
+
+// Submit do formulário de edição de lançamento
+const formEditTx = document.getElementById("form-edit-tx");
+if (formEditTx) {
+    // Preview ao vivo
+    ["edit-tx-amount", "edit-tx-tax"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener("input", window.updateEditTxPreview);
+    });
+
+    formEditTx.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (!requireEditData("Seu cargo não tem permissão para editar lançamentos.")) return;
+
+        const txId = document.getElementById("edit-tx-id").value;
+        const idx = state.transactions.findIndex(t => t.id === txId);
+        if (idx === -1) { window.closeEditTxModal(); return; }
+        const tx = state.transactions[idx];
+
+        const amount = parseMoneyValue("edit-tx-amount") || 0;
+        const taxEl = document.getElementById("edit-tx-tax");
+        const taxPct = (taxEl && taxEl.value !== "") ? parseFloat(taxEl.value) : 0;
+        const cost = amount * (taxPct / 100);
+        const netAmount = amount - cost;
+
+        tx.date = document.getElementById("edit-tx-date").value || tx.date;
+        tx.type = document.getElementById("edit-tx-type").value;
+        tx.status = document.getElementById("edit-tx-status").value;
+        tx.description = document.getElementById("edit-tx-desc").value;
+        tx.observation = document.getElementById("edit-tx-obs").value.trim();
+        tx.amount = amount;
+        tx.cost = cost;
+        tx.netAmount = netAmount;
+        tx.editedBy = currentTxUser();
+        tx.editedAt = new Date().toISOString();
+
+        // Regenera a assinatura encadeada usando o lançamento anterior como base
+        const previousHash = idx > 0 ? state.transactions[idx - 1].hash : "0000000000000000000000000000000000000000000000000000000000000000";
+        const { hash, ...hashInput } = tx; // não inclui o hash antigo no cálculo
+        tx.hash = generateHash(hashInput, previousHash);
+
+        saveState();
+        window.closeEditTxModal();
+        if (typeof renderLedger === "function") renderLedger();
+        if (typeof updateDashboard === "function") updateDashboard();
+        if (typeof renderCharts === "function") renderCharts();
+    });
+}
+
 // Instância global do seletor da modal de edição
 let searchableEditSchemeCategory = null;
 
 // Abrir modal de edição do esquema
 window.openEditSchemeModal = function(schemeId, event) {
     if (event) event.stopPropagation();
+    if (!requireEditData("Seu cargo não tem permissão para editar clientes.")) return;
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (!scheme) return;
 
@@ -3500,7 +3674,8 @@ let searchableMoveOrg = null;
 // Controle do modal de Mover Organização
 window.openMoveOrgModal = function(schemeId, event) {
     if (event) event.stopPropagation(); // Evita expandir o accordion ao clicar no botão
-    
+    if (!requireEditData("Seu cargo não tem permissão para mover clientes de organização.")) return;
+
     const scheme = state.schemes.find(s => s.id === schemeId);
     if (!scheme) return;
 
@@ -4034,7 +4209,8 @@ window.openMonitorDetails = function(convId) {
                             id="input-day-val-${conv.id}-${index}"
                             value="${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(day.actualAmount)}"
                             oninput="window.maskMoney(this)"
-                            ${day.checked ? 'disabled' : ''}>
+                            ${(day.checked || !canEditDataPerm()) ? 'disabled' : ''}
+                            ${!canEditDataPerm() ? 'title="Seu cargo não tem permissão para alterar valores de uma operação"' : ''}>
                     </div>
                     ${day.checked ? `
                         <span class="monitor-checked-text">

@@ -94,6 +94,7 @@ export function publicUser(user, role) {
           name: role.name,
           permissions: role.permissions || [],
           canEditData: !!role.canEditData,
+          canEditStock: role.canEditStock === undefined ? !!role.canEditData : !!role.canEditStock,
           canConfirm: !!role.canConfirm,
           isAdmin: !!role.isAdmin,
         }
